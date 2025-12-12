@@ -3,11 +3,19 @@ import { walletClient, publicClient } from '../client';
 import { EXCHANGE_ABI } from '../abi';
 import { EXCHANGE_ADDRESS as ADDRESS } from '../config';
 
+/**
+ * Liquidator Service - 脚手架版本
+ * 
+ * 这个服务负责监控用户健康度并执行清算。
+ * 
+ * TODO: 学生需要实现以下功能：
+ * 1. 监听 OrderPlaced 和 TradeExecuted 事件，跟踪活跃交易者
+ * 2. 定期检查每个交易者的健康度
+ * 3. 对可清算的仓位调用合约的 liquidate 函数
+ */
 export class Liquidator {
     private intervalId: NodeJS.Timeout | null = null;
     private isRunning = false;
-    // Simple in-memory set of active traders. 
-    // In production, this should be a DB or synced from Indexer.
     private activeTraders = new Set<string>();
 
     constructor(private intervalMs: number = 10000) { }
@@ -17,13 +25,8 @@ export class Liquidator {
         this.isRunning = true;
         console.log(`[Liquidator] Starting liquidation checks every ${this.intervalMs}ms...`);
 
-        // Initial scan (simplified: just listen for new events for now, 
-        // or we could query the indexer if we had one connected here. 
-        // For this demo, we'll rely on catching new events or manual addition)
-        this.watchEvents();
-
-        // DEBUG: Manually add Carol
-        this.activeTraders.add("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
+        // TODO: 实现事件监听
+        // 提示: 使用 publicClient.watchContractEvent 监听 OrderPlaced 和 TradeExecuted
 
         this.intervalId = setInterval(() => this.checkHealth(), this.intervalMs);
     }
@@ -37,121 +40,30 @@ export class Liquidator {
         console.log('[Liquidator] Stopped.');
     }
 
-    private watchEvents() {
-        // Watch for OrderPlaced to find active traders
-        publicClient.watchContractEvent({
-            address: ADDRESS as `0x${string}`,
-            abi: EXCHANGE_ABI,
-            eventName: 'OrderPlaced',
-            onLogs: logs => {
-                logs.forEach(log => {
-                    const trader = log.args.trader;
-                    if (trader && !this.activeTraders.has(trader)) {
-                        console.log(`[Liquidator] Found new trader: ${trader}`);
-                        this.activeTraders.add(trader);
-                    }
-                });
-            }
-        });
-
-        // Watch for TradeExecuted
-        publicClient.watchContractEvent({
-            address: ADDRESS as `0x${string}`,
-            abi: EXCHANGE_ABI,
-            eventName: 'TradeExecuted',
-            onLogs: logs => {
-                logs.forEach(log => {
-                    if (log.args.buyer) this.activeTraders.add(log.args.buyer);
-                    if (log.args.seller) this.activeTraders.add(log.args.seller);
-                });
-            }
-        });
-    }
-
+    /**
+     * 检查所有活跃交易者的健康度
+     * 
+     * TODO: 实现此函数
+     * 步骤:
+     * 1. 遍历 activeTraders
+     * 2. 读取每个交易者的 margin 和 position
+     * 3. 模拟调用 liquidate 检查是否可清算
+     * 4. 如果可清算，发送实际交易
+     */
     private async checkHealth() {
-        if (this.activeTraders.size === 0) return;
+        if (this.activeTraders.size === 0) {
+            console.log('[Liquidator] No active traders to check.');
+            return;
+        }
 
         console.log(`[Liquidator] Checking health for ${this.activeTraders.size} traders...`);
 
-        for (const trader of this.activeTraders) {
-            try {
-                const margin = await publicClient.readContract({
-                    address: ADDRESS as `0x${string}`,
-                    abi: EXCHANGE_ABI,
-                    functionName: 'margin',
-                    args: [trader as `0x${string}`]
-                }) as bigint;
+        // TODO: 实现健康度检查逻辑
+        // 提示:
+        // - 使用 publicClient.readContract 读取 margin 和 getPosition
+        // - 使用 publicClient.simulateContract 测试是否可清算
+        // - 使用 walletClient.writeContract 执行清算
 
-                const position = await publicClient.readContract({
-                    address: ADDRESS as `0x${string}`,
-                    abi: EXCHANGE_ABI,
-                    functionName: 'getPosition',
-                    args: [trader as `0x${string}`]
-                });
-
-                // const [freeMargin, lockedMargin, position] = account;
-
-                // Simplified Health Check Logic (Mirroring Contract)
-                // Note: Real logic needs Mark Price.
-                // We can fetch Mark Price or just try to liquidate if we suspect.
-                // Let's just try to liquidate if they have a position and low margin?
-                // Or better, let's implement the health calc.
-
-                if (position.size === 0n) continue;
-
-                // If we want to be precise, we need Mark Price.
-                // For this demo, we'll just blindly try to liquidate everyone with a position 
-                // who has very low margin, or just rely on the contract to revert if healthy.
-                // But sending txs costs gas.
-
-                // Let's just try to liquidate everyone with a position for now to demonstrate the bot works.
-                // In a real bot, you'd calculate:
-                // Margin = Free + Locked + PnL
-                // Maintenance = PositionValue * MaintenanceMarginBps
-                // If Margin < Maintenance -> Liquidate
-
-                // For now, let's just log.
-                // console.log(`[Liquidator] Trader ${trader}: Size ${formatEther(position.size)}`);
-
-                // Attempt liquidation (will fail if healthy)
-                // To avoid spamming, only try if we have a reason.
-                // But user asked for a bot. Let's make it aggressive for the demo.
-
-                // Actually, let's only try if we haven't checked recently? 
-                // Or just try.
-
-                // console.log(`[Liquidator] Attempting to liquidate ${trader}...`);
-                try {
-                    // Calculate absolute size for full liquidation
-                    const size = position.size > 0n ? position.size : -position.size;
-
-                    // Simulate call first to avoid gas waste
-                    await publicClient.simulateContract({
-                        account: walletClient.account,
-                        address: ADDRESS as `0x${string}`,
-                        abi: EXCHANGE_ABI,
-                        functionName: 'liquidate',
-                        args: [trader as `0x${string}`, size] as any
-                    });
-
-                    // If simulation succeeds, send it!
-                    console.log(`[Liquidator] !!! LIQUIDATABLE POSITION FOUND: ${trader} !!!`);
-                    const hash = await walletClient.writeContract({
-                        address: ADDRESS as `0x${string}`,
-                        abi: EXCHANGE_ABI,
-                        functionName: 'liquidate',
-                        args: [trader as `0x${string}`, size] as any
-                    });
-                    console.log(`[Liquidator] Liquidation Tx Sent: ${hash}`);
-
-                } catch (e) {
-                    // Expected for healthy positions
-                    // console.debug(`[Liquidator] ${trader} is healthy.`);
-                }
-
-            } catch (e) {
-                console.error(`[Liquidator] Error checking ${trader}:`, e);
-            }
-        }
+        console.log('[Liquidator] Health check not implemented yet.');
     }
 }

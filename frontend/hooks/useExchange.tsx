@@ -1,11 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Address, Hash, parseAbiItem, parseEther } from 'viem';
+import { Address, Hash, parseEther } from 'viem';
 import { EXCHANGE_ABI } from '../onchain/abi';
 import { EXCHANGE_ADDRESS, EXCHANGE_DEPLOY_BLOCK } from '../onchain/config';
 import { chain, getFallbackWalletClient, getWalletClient, publicClient, fallbackAccount } from '../onchain/client';
 import { OrderBookItem, OrderSide, OrderType, PositionSnapshot, Trade } from '../types';
 
-type OrderStruct = {
+interface OrderStruct {
   id: bigint;
   trader: Address;
   isBuy: boolean;
@@ -14,26 +14,25 @@ type OrderStruct = {
   initialAmount: bigint;
   timestamp: bigint;
   next: bigint;
-};
+}
 
-type OrderBookState = {
+interface OrderBookState {
   bids: OrderBookItem[];
   asks: OrderBookItem[];
-};
+}
 
-export type OpenOrder = {
+interface OpenOrder {
   id: bigint;
   isBuy: boolean;
   price: bigint;
   amount: bigint;
   timestamp: bigint;
   trader: Address;
-};
+}
 
-type ExchangeContextValue = {
+interface ExchangeContextValue {
   account?: Address;
   margin: bigint;
-
   position?: PositionSnapshot;
   markPrice: bigint;
   indexPrice: bigint;
@@ -42,8 +41,7 @@ type ExchangeContextValue = {
   trades: Trade[];
   syncing: boolean;
   error?: string;
-  connectWallet: () => Promise<void>;
-  deposit: (ethAmount: string) => Promise<void>;
+  deposit: (amount: string) => Promise<void>;
   withdraw: (amount: string) => Promise<void>;
   placeOrder: (params: {
     side: OrderSide;
@@ -52,378 +50,163 @@ type ExchangeContextValue = {
     amount: string;
     hintId?: string;
   }) => Promise<void>;
+  cancelOrder: (orderId: string) => Promise<void>;
   refresh: () => Promise<void>;
-};
+}
 
 const ExchangeContext = createContext<ExchangeContextValue | undefined>(undefined);
 
-const parseRaw = (value: string): bigint => {
-  const clean = value.trim();
-  if (!clean) throw new Error('Value required');
-  if (clean.startsWith('-')) throw new Error('Negative values not allowed');
-  if (clean.includes('.')) {
-    const [whole] = clean.split('.');
-    return BigInt(whole);
+function parseRaw(value: string): bigint {
+  try {
+    return parseEther(value);
+  } catch {
+    return 0n;
   }
-  return BigInt(clean);
-};
+}
 
-const formatBlockTime = (timestamp?: number) => {
-  if (!timestamp) return '';
-  const date = new Date(timestamp * 1000);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
-export const ExchangeProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
-  const walletClient = useMemo(() => getWalletClient() || getFallbackWalletClient(), []);
+/**
+ * Exchange Provider - 脚手架版本
+ * 
+ * 这个 Provider 提供了与合约交互的接口，但实现为空。
+ * 学生需要完成以下功能：
+ * 
+ * 1. deposit() - 调用合约的 deposit 函数
+ * 2. withdraw() - 调用合约的 withdraw 函数
+ * 3. placeOrder() - 调用合约的 placeOrder 函数
+ * 4. cancelOrder() - 调用合约的 cancelOrder 函数
+ * 5. 数据读取 - 从合约读取余额、持仓、订单簿等
+ */
+export function ExchangeProvider({ children }: { children: React.ReactNode }) {
+  // ============================================
+  // State - 这些状态用于 UI 显示
+  // ============================================
   const [account, setAccount] = useState<Address | undefined>();
   const [margin, setMargin] = useState<bigint>(0n);
-
   const [position, setPosition] = useState<PositionSnapshot | undefined>();
   const [markPrice, setMarkPrice] = useState<bigint>(0n);
   const [indexPrice, setIndexPrice] = useState<bigint>(0n);
   const [orderBook, setOrderBook] = useState<OrderBookState>({ bids: [], asks: [] });
-  const [trades, setTrades] = useState<Trade[]>([]);
   const [myOrders, setMyOrders] = useState<OpenOrder[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  const ensureContract = useCallback(() => {
-    if (!EXCHANGE_ADDRESS) {
-      throw new Error('Set VITE_EXCHANGE_ADDRESS to your MonadPerpExchange address');
-    }
-    return EXCHANGE_ADDRESS;
+  // ============================================
+  // 合约交互函数 - TODO: 学生需要实现
+  // ============================================
+
+  /**
+   * 存入保证金
+   * TODO: 实现此函数
+   * 
+   * 步骤:
+   * 1. 获取钱包客户端
+   * 2. 调用合约的 deposit() 函数，附带 ETH
+   * 3. 等待交易确认
+   * 4. 刷新数据
+   */
+  const deposit = useCallback(async (amount: string) => {
+    console.log('TODO: Implement deposit', amount);
+    setError('deposit 功能尚未实现，请完成 useExchange.tsx 中的 deposit 函数');
   }, []);
 
-  const loadOrderChain = useCallback(
-    async (headId: bigint | undefined | null) => {
-      const head: OrderStruct[] = [];
-      if (headId === undefined || headId === null) return head;
-      let current = headId;
-      const visited = new Set<string>();
-      for (let i = 0; i < 128 && typeof current === 'bigint' && current !== 0n; i++) {
-        if (visited.has(current.toString())) break;
-        visited.add(current.toString());
-        const data = (await publicClient.readContract({
-          abi: EXCHANGE_ABI,
-          address: ensureContract(),
-          functionName: 'orders',
-          args: [current],
-        })) as OrderStruct;
-        if (data.id === 0n) break;
-        head.push(data);
-        current = data.next;
-      }
-      return head;
-    },
-    [ensureContract],
-  );
-
-  const formatOrderBook = useCallback((orders: OrderStruct[], isBuy: boolean): OrderBookItem[] => {
-    const filtered = orders.filter((o) => o.isBuy === isBuy);
-    let running = 0;
-    const rows = filtered.map((o) => {
-      const size = Number(o.amount);
-      running += size;
-      return {
-        price: Number(o.price),
-        size,
-        total: running,
-        depth: 0,
-      };
-    });
-    const maxTotal = rows.reduce((m, r) => (r.total > m ? r.total : m), 0);
-    return rows.map((r) => ({
-      ...r,
-      depth: maxTotal > 0 ? Math.min(100, Math.round((r.total / maxTotal) * 100)) : 0,
-    }));
+  /**
+   * 提取保证金
+   * TODO: 实现此函数
+   * 
+   * 步骤:
+   * 1. 获取钱包客户端
+   * 2. 调用合约的 withdraw(amount) 函数
+   * 3. 等待交易确认
+   * 4. 刷新数据
+   */
+  const withdraw = useCallback(async (amount: string) => {
+    console.log('TODO: Implement withdraw', amount);
+    setError('withdraw 功能尚未实现，请完成 useExchange.tsx 中的 withdraw 函数');
   }, []);
 
-  const loadTrades = useCallback(
-    async (viewer?: Address): Promise<Trade[]> => {
-      const logs = await publicClient.getLogs({
-        address: ensureContract(),
-        event: parseAbiItem(
-          'event TradeExecuted(uint256 indexed buyOrderId,uint256 indexed sellOrderId,uint256 price,uint256 amount,address buyer,address seller)',
-        ),
-        fromBlock: EXCHANGE_DEPLOY_BLOCK,
-        toBlock: 'latest',
-      });
+  /**
+   * 下单
+   * TODO: 实现此函数
+   * 
+   * 步骤:
+   * 1. 获取钱包客户端
+   * 2. 解析参数 (side -> isBuy, price, amount, hintId)
+   * 3. 调用合约的 placeOrder(isBuy, price, amount, hintId) 函数
+   * 4. 等待交易确认
+   * 5. 刷新数据
+   */
+  const placeOrder = useCallback(async (params: {
+    side: OrderSide;
+    orderType?: OrderType;
+    price?: string;
+    amount: string;
+    hintId?: string;
+  }) => {
+    console.log('TODO: Implement placeOrder', params);
+    setError('placeOrder 功能尚未实现，请完成 useExchange.tsx 中的 placeOrder 函数');
+  }, []);
 
-      const recent = logs.slice(-30); // keep UI light
-      const timestamps = await Promise.all(
-        recent.map(async (log) => {
-          const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
-          return Number(block.timestamp);
-        }),
-      );
+  /**
+   * 取消订单
+   * TODO: 实现此函数
+   * 
+   * 步骤:
+   * 1. 获取钱包客户端
+   * 2. 调用合约的 cancelOrder(orderId) 函数
+   * 3. 等待交易确认
+   * 4. 刷新数据
+   */
+  const cancelOrder = useCallback(async (orderId: string) => {
+    console.log('TODO: Implement cancelOrder', orderId);
+    setError('cancelOrder 功能尚未实现，请完成 useExchange.tsx 中的 cancelOrder 函数');
+  }, []);
 
-      return recent.map((log, idx) => {
-        const args = log.args as {
-          price?: bigint;
-          amount?: bigint;
-          buyer?: Address;
-          seller?: Address;
-        };
-        const buyerLower = args.buyer?.toLowerCase();
-        const sellerLower = args.seller?.toLowerCase();
-        const viewerLower = viewer?.toLowerCase();
-        const side =
-          viewerLower && buyerLower === viewerLower
-            ? 'buy'
-            : viewerLower && sellerLower === viewerLower
-              ? 'sell'
-              : 'buy';
-
-        return {
-          id: `${log.transactionHash}-${log.logIndex ?? 0n}`,
-          price: Number(args.price ?? 0n),
-          amount: Number(args.amount ?? 0n),
-          time: formatBlockTime(timestamps[idx]),
-          side,
-          buyer: args.buyer,
-          seller: args.seller,
-          txHash: log.transactionHash as Hash,
-        };
-      });
-    },
-    [ensureContract],
-  );
-
+  /**
+   * 刷新所有数据
+   * TODO: 实现此函数
+   * 
+   * 步骤:
+   * 1. 读取用户余额 margin(account)
+   * 2. 读取用户持仓 getPosition(account)
+   * 3. 读取标记价和指数价 markPrice(), indexPrice()
+   * 4. 读取订单簿 (遍历 bestBuyId/bestSellId 链表)
+   * 5. 读取用户的挂单
+   * 6. 读取最近成交 (TradeExecuted 事件)
+   */
   const refresh = useCallback(async () => {
-    try {
-      setSyncing(true);
-      setError(undefined);
-      const address = ensureContract();
-      const [mark, index, bestBid, bestAsk] = await Promise.all([
-        publicClient.readContract({ abi: EXCHANGE_ABI, address, functionName: 'markPrice' }) as Promise<bigint>,
-        publicClient.readContract({ abi: EXCHANGE_ABI, address, functionName: 'indexPrice' }) as Promise<bigint>,
-        publicClient.readContract({ abi: EXCHANGE_ABI, address, functionName: 'bestBuyId' }) as Promise<bigint>,
-        publicClient.readContract({ abi: EXCHANGE_ABI, address, functionName: 'bestSellId' }) as Promise<bigint>,
-      ]);
-      setMarkPrice(mark);
-      setIndexPrice(index);
-      console.debug('[orderbook] head ids', { bestBid: bestBid?.toString?.(), bestAsk: bestAsk?.toString?.() });
+    console.log('TODO: Implement refresh');
+    setSyncing(true);
 
-      if (account) {
-        const [m, pos] = await Promise.all([
-          publicClient.readContract({
-            abi: EXCHANGE_ABI,
-            address,
-            functionName: 'margin',
-            args: [account],
-          }) as Promise<bigint>,
-          publicClient.readContract({
-            abi: EXCHANGE_ABI,
-            address,
-            functionName: 'getPosition',
-            args: [account],
-          }) as Promise<PositionSnapshot>,
-        ]);
-        setMargin(m);
-        setPosition(pos);
-      }
+    // 示例: 设置一些模拟数据供 UI 显示
+    setMarkPrice(parseEther('100'));
+    setIndexPrice(parseEther('100'));
+    setMargin(parseEther('10'));
 
-      let bidsRaw: OrderStruct[] = [];
-      let asksRaw: OrderStruct[] = [];
-      try {
-        [bidsRaw, asksRaw] = await Promise.all([loadOrderChain(bestBid), loadOrderChain(bestAsk)]);
-      } catch (inner) {
-        setError((inner as Error)?.message || 'Failed to load orderbook');
-      }
-
-      // 兜底：全量扫描前 N 个 id，合并去重，保证 UI 有数据
-      const scanned: OrderStruct[] = [];
-      const SCAN_LIMIT = 128n;
-      for (let i = 1n; i <= SCAN_LIMIT; i++) {
-        const data = (await publicClient.readContract({
-          abi: EXCHANGE_ABI,
-          address,
-          functionName: 'orders',
-          args: [i],
-        })) as OrderStruct;
-        if (data.id !== 0n && data.amount > 0n) scanned.push(data);
-      }
-      const merged = new Map<bigint, OrderStruct>();
-      [...bidsRaw, ...asksRaw, ...scanned].forEach((o) => {
-        if (o && o.id) merged.set(o.id, o);
-      });
-      const allOrders = Array.from(merged.values());
-      const bids = allOrders.filter((o) => o.isBuy && o.amount > 0n);
-      const asks = allOrders.filter((o) => !o.isBuy && o.amount > 0n);
-      console.debug('[orderbook] bids/asks', { bids, asks, merged: merged.size });
-
-      setOrderBook({
-        bids: formatOrderBook(bids, true),
-        asks: formatOrderBook(asks, false),
-      });
-      try {
-        const tradesRaw = await loadTrades(account);
-        setTrades(tradesRaw);
-      } catch {
-        // keep previous trades on failure
-      }
-      if (account) {
-        const accountLower = account.toLowerCase();
-        const mine = [...bidsRaw, ...asksRaw]
-          .filter((o) => o.trader && o.trader.toLowerCase() === accountLower)
-          .map(
-            (o): OpenOrder => ({
-              id: o.id,
-              isBuy: o.isBuy,
-              price: o.price,
-              amount: o.amount,
-              timestamp: o.timestamp,
-              trader: o.trader,
-            }),
-          );
-        setMyOrders(mine);
-      } else {
-        setMyOrders([]);
-      }
-    } catch (e) {
-      setError((e as Error)?.message || 'Failed to sync exchange data');
-    } finally {
-      setSyncing(false);
-    }
-  }, [account, ensureContract, formatOrderBook, loadOrderChain, loadTrades]);
-
-  const connectWallet = useCallback(async () => {
-    if (!walletClient) {
-      setError('No injected wallet or test private key configured');
-      return;
-    }
-    try {
-      if ('requestAddresses' in walletClient) {
-        const [addr] = await walletClient.requestAddresses();
-        setAccount(addr);
-      } else if ('getAddresses' in walletClient) {
-        const addrs = await (walletClient as any).getAddresses();
-        if (addrs.length > 0) {
-          setAccount(addrs[0]);
-        }
-      } else if ((walletClient as any).account?.address) {
-        setAccount((walletClient as any).account.address);
-      } else if (fallbackAccount) {
-        setAccount(fallbackAccount.address);
-      }
-    } catch (e) {
-      setError((e as Error)?.message || 'Wallet connection failed');
-    }
-  }, [walletClient]);
-
-  const waitFor = useCallback(async (hash: Hash) => {
-    await publicClient.waitForTransactionReceipt({ hash, chain });
+    setSyncing(false);
   }, []);
 
-  const deposit = useCallback(
-    async (ethAmount: string) => {
-      if (!walletClient || !account) throw new Error('Connect wallet before depositing');
-      const value = parseEther(ethAmount || '0');
-      const hash = await walletClient.writeContract({
-        account,
-        address: ensureContract(),
-        abi: EXCHANGE_ABI,
-        functionName: 'deposit',
-        args: [],
-        value,
-      });
-      await waitFor(hash);
-      await refresh();
-    },
-    [account, ensureContract, refresh, waitFor, walletClient],
-  );
-
-  const withdraw = useCallback(
-    async (amount: string) => {
-      if (!walletClient || !account) throw new Error('Connect wallet before withdrawing');
-      const parsed = parseEther(amount || '0');
-      const hash = await walletClient.writeContract({
-        account,
-        address: ensureContract(),
-        abi: EXCHANGE_ABI,
-        functionName: 'withdraw',
-        args: [parsed],
-      });
-      await waitFor(hash);
-      await refresh();
-    },
-    [account, ensureContract, refresh, waitFor, walletClient],
-  );
-
-  const placeOrder = useCallback(
-    async ({
-      side,
-      orderType = OrderType.LIMIT,
-      price,
-      amount,
-      hintId,
-    }: {
-      side: OrderSide;
-      orderType?: OrderType;
-      price?: string;
-      amount: string;
-      hintId?: string;
-    }) => {
-      if (!walletClient || !account) throw new Error('Connect wallet before placing orders');
-      const currentPrice = markPrice > 0 ? markPrice : 1n;
-      const parsedPrice = price ? parseRaw(price) : currentPrice;
-      const effectivePrice =
-        orderType === OrderType.MARKET
-          ? side === OrderSide.BUY
-            ? currentPrice + 1n // cross existing asks
-            : currentPrice - 1n > 0 ? currentPrice - 1n : 1n
-          : parsedPrice;
-      const parsedAmount = parseRaw(amount);
-      const parsedHint = hintId ? parseRaw(hintId) : 0n;
-
-      const hash = await walletClient.writeContract({
-        account,
-        address: ensureContract(),
-        abi: EXCHANGE_ABI,
-        functionName: 'placeOrder',
-        args: [side === OrderSide.BUY, effectivePrice, parsedAmount, parsedHint],
-      });
-      await waitFor(hash);
-      await refresh();
-    },
-    [account, ensureContract, markPrice, refresh, walletClient, waitFor],
-  );
-
-  // Auto fetch account if wallet already authorized or fallback PK configured
-  useEffect(() => {
-    const fetchAccount = async () => {
-      if (fallbackAccount) {
-        setAccount(fallbackAccount.address);
-        return;
-      }
-      if (!walletClient) return;
-      try {
-        if ('getAddresses' in walletClient) {
-          const addrs = await (walletClient as any).getAddresses();
-          if (addrs.length > 0) {
-            setAccount(addrs[0]);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    };
-    fetchAccount();
-  }, [walletClient]);
+  // ============================================
+  // 初始化和事件监听
+  // ============================================
 
   useEffect(() => {
+    // TODO: 获取当前账户地址
+    // 可以使用 getWalletClient 或 fallbackAccount
+    if (fallbackAccount) {
+      setAccount(fallbackAccount.address);
+    }
+
+    // 初始刷新
     refresh();
-    const timer = setInterval(() => {
-      refresh().catch(() => { });
-    }, 4000);
-    return () => clearInterval(timer);
   }, [refresh]);
 
+  // ============================================
+  // Context Value
+  // ============================================
   const value: ExchangeContextValue = {
     account,
     margin,
-
     position,
     markPrice,
     indexPrice,
@@ -432,20 +215,24 @@ export const ExchangeProvider: React.FC<React.PropsWithChildren> = ({ children }
     trades,
     syncing,
     error,
-    connectWallet,
     deposit,
     withdraw,
     placeOrder,
+    cancelOrder,
     refresh,
   };
 
-  return <ExchangeContext.Provider value={value}>{children}</ExchangeContext.Provider>;
-};
+  return (
+    <ExchangeContext.Provider value={value}>
+      {children}
+    </ExchangeContext.Provider>
+  );
+}
 
-export const useExchange = () => {
-  const ctx = useContext(ExchangeContext);
-  if (!ctx) {
+export function useExchange() {
+  const context = useContext(ExchangeContext);
+  if (!context) {
     throw new Error('useExchange must be used within ExchangeProvider');
   }
-  return ctx;
-};
+  return context;
+}

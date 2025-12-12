@@ -4,126 +4,72 @@ pragma solidity ^0.8.20;
 import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import "./LiquidationModule.sol";
 
-    /// @notice Margin accounting (deposit/withdraw) plus margin locks for orders.
-    abstract contract MarginModule is LiquidationModule {
-        function deposit() external payable virtual nonReentrant {
-            accounts[msg.sender].freeMargin += msg.value;
-            emit MarginDeposited(msg.sender, msg.value);
-        }
+/// @notice Margin accounting (deposit/withdraw) plus margin checks.
+/// @dev Day 1: 保证金模块
+abstract contract MarginModule is LiquidationModule {
 
-        function withdraw(uint256 amount) external virtual nonReentrant {
-            require(amount > 0, "amount=0");
-            _applyFunding(msg.sender);
-            require(accounts[msg.sender].freeMargin >= amount, "not enough margin");
-            _ensureWithdrawKeepsMaintenance(msg.sender, amount);
-            accounts[msg.sender].freeMargin -= amount;
-            (bool ok, ) = msg.sender.call{value: amount}("");
-            require(ok, "withdraw failed");
-            emit MarginWithdrawn(msg.sender, amount);
-        }
-
-    /// @notice Calculate margin needed for a position at current mark price
-    function _calculatePositionMargin(int256 size) internal view returns (uint256) {
-        if (size == 0) return 0;
-        uint256 absSize = size > 0 ? uint256(size) : uint256(-size);
-        uint256 notional = (absSize * markPrice) / 1e18;
-        return (notional * initialMarginBps) / 10_000;
+    /// @notice 存入保证金
+    function deposit() external payable virtual nonReentrant {
+        // TODO: 请实现此函数
+        // 步骤:
+        // 1. 增加用户的 freeMargin
+        // 2. 触发 MarginDeposited 事件
     }
 
-    /// @notice Count pending orders for a trader (O(1) via counter)
+    /// @notice 提取保证金
+    /// @param amount 提取金额
+    function withdraw(uint256 amount) external virtual nonReentrant {
+        // TODO: 请实现此函数
+        // 步骤:
+        // 1. 检查 amount > 0
+        // 2. 应用资金费 _applyFunding
+        // 3. 检查 freeMargin >= amount
+        // 4. 检查提现后仍满足维持保证金 _ensureWithdrawKeepsMaintenance
+        // 5. 减少 freeMargin
+        // 6. 转账给用户
+        // 7. 触发 MarginWithdrawn 事件
+    }
+
+    /// @notice 计算持仓所需保证金
+    function _calculatePositionMargin(int256 size) internal view returns (uint256) {
+        // TODO: 请实现此函数
+        // 公式: abs(size) * markPrice * initialMarginBps / 10000 / 1e18
+        return 0;
+    }
+
+    /// @notice 获取用户待成交订单数量
     function _countPendingOrders(address trader) internal view returns (uint256) {
         return pendingOrderCount[trader];
     }
 
-    /// @notice Calculate worst-case margin if all pending orders execute
+    /// @notice 计算最坏情况下所需保证金
+    /// @dev 假设所有挂单都成交后的保证金需求
     function _calculateWorstCaseMargin(address trader) internal view returns (uint256) {
-        Position memory pos = accounts[trader].position;
-        
-        // Accumulate all pending buy and sell sizes
-        uint256 totalBuySize = 0;
-        uint256 totalSellSize = 0;
-        
-        uint256 id = bestBuyId;
-        while (id != 0) {
-            if (orders[id].trader == trader) {
-                totalBuySize += orders[id].amount;
-            }
-            id = orders[id].next;
-        }
-        
-        id = bestSellId;
-        while (id != 0) {
-            if (orders[id].trader == trader) {
-                totalSellSize += orders[id].amount;
-            }
-            id = orders[id].next;
-        }
-        
-        // Calculate two scenarios: all buys execute OR all sells execute
-        int256 sizeIfAllBuy = pos.size + int256(totalBuySize);
-        int256 sizeIfAllSell = pos.size - int256(totalSellSize);
-        
-        uint256 marginIfAllBuy = _calculatePositionMargin(sizeIfAllBuy);
-        uint256 marginIfAllSell = _calculatePositionMargin(sizeIfAllSell);
-        
-        // Return the maximum (worst case)
-        return marginIfAllBuy > marginIfAllSell ? marginIfAllBuy : marginIfAllSell;
+        // TODO: 请实现此函数
+        // 步骤:
+        // 1. 遍历买单链表，累计该用户的买单总量
+        // 2. 遍历卖单链表，累计该用户的卖单总量
+        // 3. 计算两种情况: 全部买单成交 vs 全部卖单成交
+        // 4. 返回两者中较大的保证金需求
+        return 0;
     }
 
-    /// @notice Check if trader has enough margin for worst-case scenario
+    /// @notice 检查用户是否有足够保证金
     function _checkWorstCaseMargin(address trader) internal view {
-        uint256 required = _calculateWorstCaseMargin(trader);
-        
-        Position memory p = accounts[trader].position;
-        int256 marginBalance = int256(accounts[trader].freeMargin)
-                             + p.realizedPnl
-                             + _unrealizedPnl(p);
-        
-        console.log("_checkWorstCaseMargin:", trader);
-        console.log("  Required:", required);
-        console.log("  Available:", uint256(marginBalance));
-        
-        require(
-            marginBalance >= int256(required),
-            string(abi.encodePacked(
-                "insufficient margin: need ",
-                _toString(required / 1e18),
-                " ETH, have ",
-                _toString(uint256(marginBalance) / 1e18),
-                " ETH"
-            ))
-        );
+        // TODO: 请实现此函数
+        // 步骤:
+        // 1. 计算 required = _calculateWorstCaseMargin(trader)
+        // 2. 计算 marginBalance = freeMargin + realizedPnl + unrealizedPnl
+        // 3. require(marginBalance >= required, "insufficient margin")
     }
 
-    function _toString(uint256 value) private pure returns (string memory) {
-        if (value == 0) return "0";
-        uint256 temp = value;
-        uint256 digits;
-        while (temp != 0) {
-            digits++;
-            temp /= 10;
-        }
-        bytes memory buffer = new bytes(digits);
-        while (value != 0) {
-            digits -= 1;
-            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
-            value /= 10;
-        }
-        return string(buffer);
+    /// @notice 确保提现后仍满足维持保证金要求
+    function _ensureWithdrawKeepsMaintenance(address trader, uint256 amount) internal view {
+        // TODO: 请实现此函数
+        // 步骤:
+        // 1. 如果没有持仓，直接返回
+        // 2. 计算提现后的 marginBalance
+        // 3. 计算持仓价值和维持保证金
+        // 4. require(marginBalance >= maintenance)
     }
-
-        function _ensureWithdrawKeepsMaintenance(address trader, uint256 amount) internal view {
-            Position storage p = accounts[trader].position;
-            if (p.size == 0) return;
-
-            require(markPrice > 0, "mark price unset");
-            uint256 priceBase = markPrice;
-            int256 marginBalance = int256(accounts[trader].freeMargin - amount) + p.realizedPnl + _unrealizedPnl(p);
-            uint256 positionValue = SignedMath.abs((int256(priceBase) * p.size) / 1e18);
-            uint256 maintenance = (positionValue * maintenanceMarginBps) / 10_000;
-            uint256 initialReq = (positionValue * initialMarginBps) / 10_000;
-            uint256 requiredMargin = initialReq > maintenance ? initialReq : maintenance;
-            require(marginBalance >= int256(requiredMargin), "withdraw breaches maintenance");
-        }
-
-    }
+}

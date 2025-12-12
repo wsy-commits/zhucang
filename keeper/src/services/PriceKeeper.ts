@@ -3,10 +3,21 @@ import { walletClient, publicClient } from '../client';
 import { EXCHANGE_ABI } from '../abi';
 import { EXCHANGE_ADDRESS as ADDRESS } from '../config';
 
+/**
+ * PriceKeeper Service - 脚手架版本
+ * 
+ * 这个服务负责定期更新交易所的指数价格。
+ * 
+ * TODO: 学生需要实现以下功能：
+ * 1. 从 Pyth Network 获取 ETH/USD 价格
+ * 2. 调用合约的 updateIndexPrice 函数更新价格
+ */
 export class PriceKeeper {
     private intervalId: NodeJS.Timeout | null = null;
-    private currentPrice = 2700; // Start at 2700 (fallback)
+    private currentPrice = 2700; // 默认价格
     private isRunning = false;
+
+    // Pyth ETH/USD Price Feed ID
     private readonly PYTH_ETH_ID = '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace';
 
     constructor(private intervalMs: number = 5000) { }
@@ -16,7 +27,6 @@ export class PriceKeeper {
         this.isRunning = true;
         console.log(`[PriceKeeper] Starting price updates every ${this.intervalMs}ms...`);
 
-        // Initial fetch
         this.updatePrice();
         this.intervalId = setInterval(() => this.updatePrice(), this.intervalMs);
     }
@@ -30,45 +40,35 @@ export class PriceKeeper {
         console.log('[PriceKeeper] Stopped.');
     }
 
+    /**
+     * 更新价格
+     * 
+     * TODO: 实现此函数
+     * 步骤:
+     * 1. 从 Pyth Hermes API 获取最新价格
+     *    URL: https://hermes.pyth.network/v2/updates/price/latest?ids[]=${PYTH_ETH_ID}
+     * 2. 解析价格 (注意 expo 指数)
+     * 3. 调用合约的 updateIndexPrice
+     */
     private async updatePrice() {
         try {
-            // Try to fetch real price from Pyth
-            try {
-                const res = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${this.PYTH_ETH_ID}`);
-                if (res.ok) {
-                    const data = await res.json() as any;
-                    if (data?.parsed?.[0]?.price) {
-                        const p = data.parsed[0].price;
-                        const rawPrice = Number(p.price);
-                        const expo = Number(p.expo);
-                        // Calculate price: raw * 10^expo
-                        this.currentPrice = rawPrice * (10 ** expo);
-                        console.log(`[PriceKeeper] Fetched Pyth Price: ${this.currentPrice.toFixed(2)}`);
-                    }
-                }
-            } catch (fetchError) {
-                console.warn('[PriceKeeper] Pyth fetch failed, using fallback/random walk', fetchError);
-                // Ignore fetch errors, fallback to random walk
-                const change = (Math.random() - 0.5) * 0.002;
-                this.currentPrice = this.currentPrice * (1 + change);
-            }
+            // TODO: 从 Pyth 获取价格
+            // const res = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${this.PYTH_ETH_ID}`);
+            // const data = await res.json();
+            // 解析 data.parsed[0].price
 
-            // Safety bounds (1000 - 5000)
-            if (this.currentPrice < 1000) this.currentPrice = 1000;
-            if (this.currentPrice > 5000) this.currentPrice = 5000;
+            // 临时: 使用模拟价格
+            console.log(`[PriceKeeper] TODO: Implement price fetching from Pyth`);
+            console.log(`[PriceKeeper] Using mock price: ${this.currentPrice}`);
 
-            const priceWei = parseEther(this.currentPrice.toFixed(2));
-
-            console.log(`[PriceKeeper] Updating Index Price to ${this.currentPrice.toFixed(2)}...`);
-
-            const hash = await walletClient.writeContract({
-                address: ADDRESS as `0x${string}`,
-                abi: EXCHANGE_ABI,
-                functionName: 'updateIndexPrice',
-                args: [priceWei]
-            });
-
-            console.log(`[PriceKeeper] Tx sent: ${hash}`);
+            // TODO: 调用合约更新价格
+            // const priceWei = parseEther(this.currentPrice.toFixed(2));
+            // const hash = await walletClient.writeContract({
+            //     address: ADDRESS as `0x${string}`,
+            //     abi: EXCHANGE_ABI,
+            //     functionName: 'updateIndexPrice',
+            //     args: [priceWei]
+            // });
 
         } catch (e) {
             console.error('[PriceKeeper] Error updating price:', e);
