@@ -1,0 +1,415 @@
+# Day 4 - 价格服务与标记价格（Pricing & Mark Price）
+
+本节目标：引入价格服务层，实现 `updateIndexPrice()` 让外部 Keeper 推送价格到链上，并通过 `_calculateMarkPrice()` 计算标记价格（三价取中 + 偏离保护），为后续的资金费率和清算打下基础。
+
+---
+
+## 1) 学习目标（面向学生）
+
+完成本节后，你将能够：
+
+- 理解"指数价格（Index Price）"与"标记价格（Mark Price）"的区别与用途。
+- 实现 `updateIndexPrice()`：仅限 Operator 角色调用的价格推送入口。
+- 实现 `_calculateMarkPrice()`：三价取中逻辑 + 5% 偏离钳位。
+- 编写 Keeper 服务从 Binance/Pyth 获取价格并推送上链。
+
+---
+
+## 2) 前置准备（必须满足）
+
+Day4 建立在 Day3 之上，请先确认：
+
+- Day1 / Day2 / Day3 测试已通过
+- `_executeTrade` / `_updatePosition` 已实现（成交与持仓逻辑可用）
+
+你可以先跑：
+
+```bash
+cd contract
+forge test --match-contract Day3MatchingTest -vvv
+```
+
+---
+
+## 3) 当天完成标准（Definition of Done）
+
+- `forge test --match-contract Day4PriceUpdateTest -vvv` 全部通过（4 个测试）
+- Operator 可成功调用 `updateIndexPrice()`
+- 非 Operator 调用 `updateIndexPrice()` 必须 revert
+- 当订单簿为空时，`markPrice == indexPrice`
+- 当订单簿有挂单时，`markPrice` 使用三价取中逻辑
+- 前端 Header 显示实时 Index Price 与 Mark Price
+
+---
+
+## 4) 开发步骤（边理解边写代码）
+
+### Step 1: 读测试，先把规则写清楚
+
+打开：
+
+- `contract/test/Day4PriceUpdate.t.sol`
+
+你会看到四类要求：
+
+1. **Operator 可更新价格**：调用后 `indexPrice` 与 `markPrice` 更新
+2. **非 Operator 被拒绝**：普通用户调用必须 revert
+3. **更新触发事件**：`MarkPriceUpdated(indexPrice, markPrice)` 必须触发
+4. **价格影响保证金检查**：有持仓时提现需要使用最新价格判断
+
+---
+
+### Step 2: 理解 Index Price 与 Mark Price
+
+| 概念 | 说明 | 来源 |
+|------|------|------|
+| **Index Price** | 现货市场加权平均价 | Binance/OKX 等 CEX |
+| **Mark Price** | 合约结算用价 | 订单簿 + Index 综合计算 |
+| **用途** | 资金费率、清算、盈亏计算 | 防止价格操纵 |
+
+为什么不直接用 Index Price？
+
+- 链上订单簿价格可能与外部市场有偏差
+- 使用"三价取中"可减少单一价格源的操纵风险
+- 设置 ±5% 偏离上限防止极端情况
+
+---
+
+### Step 3: 实现 `updateIndexPrice()`
+
+修改：
+
+- `contract/src/modules/PricingModule.sol`
+
+这个函数需要：
+
+1. 验证调用者有 `OPERATOR_ROLE`（已通过 `onlyRole` 修饰器）
+2. 更新 `indexPrice` 存储变量
+3. 调用 `_calculateMarkPrice()` 计算标记价
+4. 更新 `markPrice` 存储变量
+5. 触发 `MarkPriceUpdated` 事件
+
+```solidity
+function updateIndexPrice(uint256 newIndexPrice) external virtual onlyRole(OPERATOR_ROLE) {
+    // TODO: 请实现此函数
+    // 步骤:
+    // 1. indexPrice = newIndexPrice;
+    // 2. uint256 newMarkPrice = _calculateMarkPrice(newIndexPrice);
+    // 3. markPrice = newMarkPrice;
+    // 4. emit MarkPriceUpdated(newIndexPrice, newMarkPrice);
+}
+```
+
+预期行为：
+
+- `exchange.indexPrice()` 返回最新推送的价格
+- `exchange.markPrice()` 返回经过计算的标记价
+
+---
+
+### Step 4: 实现 `_calculateMarkPrice()`（三价取中）
+
+仍在：
+
+- `contract/src/modules/PricingModule.sol`
+
+核心逻辑：
+
+1. 获取订单簿的 `bestBid`（最高买价）和 `bestAsk`（最低卖价）
+2. 如果订单簿为空（买卖盘都没有），直接返回 `indexPrice`
+3. 计算三价取中：`median(bestBid, bestAsk, indexPrice)`
+4. 应用 ±5% 偏离保护：结果不能超过 `indexPrice * 1.05` 或低于 `indexPrice * 0.95`
+
+```solidity
+function _calculateMarkPrice(uint256 indexPrice_) internal view virtual returns (uint256) {
+    // TODO: 请实现此函数
+
+    // Step 1: 获取最优买卖价
+    // uint256 bestBid = bestBuyId != 0 ? orders[bestBuyId].price : 0;
+    // uint256 bestAsk = bestSellId != 0 ? orders[bestSellId].price : 0;
+
+    // Step 2: 订单簿为空时返回 indexPrice
+    // if (bestBid == 0 && bestAsk == 0) return indexPrice_;
+
+    // Step 3: 三价取中
+    // 如果只有买盘：mid = median(bestBid, indexPrice_, indexPrice_) = indexPrice_;
+    // 如果只有卖盘：mid = median(bestAsk, indexPrice_, indexPrice_) = indexPrice_;
+    // 如果买卖都有：mid = median(bestBid, bestAsk, indexPrice_)
+    // uint256 mid = _median(bestBid, bestAsk, indexPrice_);
+
+    // Step 4: 钳位到 ±5%
+    // uint256 upper = indexPrice_ * 105 / 100;
+    // uint256 lower = indexPrice_ * 95 / 100;
+    // if (mid > upper) return upper;
+    // if (mid < lower) return lower;
+    // return mid;
+
+    return indexPrice_; // TODO: 替换为完整实现
+}
+```
+
+辅助函数 `_median`（如果不存在需自行实现）：
+
+```solidity
+function _median(uint256 a, uint256 b, uint256 c) internal pure returns (uint256) {
+    // TODO: 返回三个数的中位数
+    // 提示：可以用排序或条件判断实现
+}
+```
+
+---
+
+### Step 5: 实现 Keeper 服务（TypeScript）
+
+修改：
+
+- `keeper/src/services/PriceKeeper.ts`
+
+Keeper 需要定期执行以下操作：
+
+1. 从外部 API（Binance 或 Pyth）获取 ETH/USD 价格
+2. 转换为合约精度（`1e18`）
+3. 调用 `updateIndexPrice()` 推送到链上
+
+**方案 A：使用 Binance API（简单）**
+
+```typescript
+// TODO: 实现从 Binance 获取价格
+// const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT');
+// const data = await res.json();
+// const price = parseFloat(data.price);
+// const priceWei = parseEther(price.toFixed(2));
+```
+
+**方案 B：使用 Pyth Network（高级）**
+
+```typescript
+// TODO: 实现从 Pyth Hermes 获取价格
+// const PYTH_ETH_ID = '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace';
+// const res = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${PYTH_ETH_ID}`);
+// const data = await res.json();
+// 解析 data.parsed[0].price 和 data.parsed[0].expo
+```
+
+**调用合约更新价格**
+
+```typescript
+// TODO: 调用合约
+// const hash = await walletClient.writeContract({
+//     address: EXCHANGE_ADDRESS as `0x${string}`,
+//     abi: EXCHANGE_ABI,
+//     functionName: 'updateIndexPrice',
+//     args: [priceWei]
+// });
+// await publicClient.waitForTransactionReceipt({ hash });
+```
+
+---
+
+### Step 6: 前端显示价格（可选）
+
+确认以下组件已能显示价格：
+
+- **Header 组件**：显示 Index Price 和 Mark Price
+- **MarketStats 组件**：显示价格相关统计
+
+前端应通过 `publicClient.readContract` 读取：
+
+```typescript
+const indexPrice = await publicClient.readContract({
+    address: EXCHANGE_ADDRESS,
+    abi: EXCHANGE_ABI,
+    functionName: 'indexPrice'
+});
+
+const markPrice = await publicClient.readContract({
+    address: EXCHANGE_ADDRESS,
+    abi: EXCHANGE_ABI,
+    functionName: 'markPrice'
+});
+```
+
+---
+
+## 5) 解析：为什么这样写
+
+### 5.1 为什么需要 Operator 角色？
+
+价格更新是敏感操作：
+
+- 错误的价格会导致用户被错误清算
+- 恶意价格操纵可套取资金
+
+因此使用 AccessControl 的 `OPERATOR_ROLE` 限制：
+
+```solidity
+function updateIndexPrice(uint256 newIndexPrice) external virtual onlyRole(OPERATOR_ROLE) {
+```
+
+生产环境中，Operator 通常是：
+- 可信的 Keeper 服务
+- 多签钱包
+- DAO 控制的合约
+
+### 5.2 三价取中的原理
+
+```
+median(bestBid, bestAsk, indexPrice)
+```
+
+| 场景 | bestBid | bestAsk | indexPrice | 结果 |
+|------|---------|---------|------------|------|
+| 价格合理 | 2695 | 2705 | 2700 | 2700 |
+| 买压大 | 2750 | 2760 | 2700 | 2750 |
+| 卖压大 | 2640 | 2650 | 2700 | 2650 |
+| 操纵买盘 | 3000 | 2705 | 2700 | **2705** |
+
+最后一行是关键：即使有人恶意挂高价买单，中位数也会过滤掉极端值。
+
+### 5.3 为什么需要 ±5% 偏离保护？
+
+即使三价取中，如果买卖盘同时被操纵，标记价仍可能偏离真实价格。
+
+钳位规则确保：
+- `markPrice <= indexPrice * 1.05`
+- `markPrice >= indexPrice * 0.95`
+
+这样即使链上订单簿被操纵，标记价偏离外部市场的幅度也有上限。
+
+### 5.4 Keeper 为什么用推送模式？
+
+链上合约无法主动"拉取"外部价格（区块链是封闭系统）。
+
+两种模式：
+
+| 模式 | 说明 | 优缺点 |
+|------|------|--------|
+| **Push**（本课程） | Keeper 主动调用合约 | 简单，但依赖 Keeper 可用性 |
+| **Pull**（Pyth） | 用户交易时带入价格证明 | 去中心化，但实现复杂 |
+
+Day4 使用 Push 模式简化学习曲线。
+
+---
+
+## 6) 测试与验证
+
+### 6.1 运行合约测试
+
+```bash
+cd contract
+forge test --match-contract Day4PriceUpdateTest -vvv
+```
+
+通过标准：4 个测试全部 `PASS`
+
+单独运行某个测试：
+
+```bash
+forge test --match-test testOperatorCanUpdatePrice -vvv
+```
+
+### 6.2 前端验证（必须）
+
+启动本地环境：
+
+```bash
+./quickstart.sh
+```
+
+打开 `http://localhost:3000`，验证：
+
+**验收路径 1：价格显示**
+
+1. 观察 Header 区域是否显示 Index Price 和 Mark Price
+2. 如果显示 `--` 或 `0`，说明 Keeper 未运行或合约函数未实现
+
+**验收路径 2：手动测试价格更新**
+
+在终端中使用 Foundry 的 `cast` 命令测试：
+
+```bash
+# 获取当前价格
+cast call <EXCHANGE_ADDRESS> "indexPrice()" --rpc-url http://localhost:8545
+
+# 更新价格（需要 Operator 私钥）
+cast send <EXCHANGE_ADDRESS> "updateIndexPrice(uint256)" "2500000000000000000000" \
+  --private-key <OPERATOR_PRIVATE_KEY> --rpc-url http://localhost:8545
+```
+
+**验收路径 3：Keeper 自动更新**
+
+1. 启动 Keeper 服务：`cd keeper && npm start`
+2. 观察日志输出价格更新信息
+3. 刷新前端，确认价格变化
+
+---
+
+## 7) 常见问题（排错思路）
+
+1. **测试报错 `AccessControl: account ... is missing role`**
+   - `updateIndexPrice` 需要 `OPERATOR_ROLE`
+   - 测试中需要先 `grantRole`：`exchange.grantRole(exchange.OPERATOR_ROLE(), address(this));`
+
+2. **`markPrice` 始终等于 `indexPrice`**
+   - `_calculateMarkPrice()` 没有正确实现三价取中
+   - 检查是否正确读取了 `bestBuyId` 和 `bestSellId`
+
+3. **三价取中结果不对**
+   - `_median()` 函数逻辑错误
+   - 确保处理了只有买盘或只有卖盘的情况
+
+4. **钳位逻辑不生效**
+   - 检查 `upper = indexPrice_ * 105 / 100` 是否正确
+   - 注意 Solidity 整数除法的精度问题
+
+5. **Keeper 报错 `transaction failed`**
+   - 确认 Keeper 使用的账户有 `OPERATOR_ROLE`
+   - 检查 `EXCHANGE_ADDRESS` 配置是否正确
+
+6. **前端价格不更新**
+   - 点击 Refresh 按钮
+   - 检查 Console 是否有 RPC 错误
+   - 确认合约地址正确
+
+---
+
+## 8) 小结 & 为 Day 5 铺垫
+
+今天我们完成了"价格服务"的核心逻辑：
+
+- `updateIndexPrice()`：Operator 推送外部市场价格
+- `_calculateMarkPrice()`：三价取中 + 偏离保护
+- Keeper 服务：定时从 Binance/Pyth 获取价格并上链
+
+至此，系统具备了：
+1. 用户资金管理 → 2. 订单簿交易 → 3. 撮合成交 → **4. 价格服务**
+
+Day 5 会使用这些价格实现"数据索引与 K 线"：
+
+- 配置 Indexer（Envio）解析 `TradeExecuted` 事件
+- 生成 OHLC（开高低收）K 线数据
+- 前端集成图表库展示专业行情
+
+---
+
+## 9) 可选挑战 / 扩展（不影响主线）
+
+1. **实现完整的 Pyth 集成**
+   - 解析 Pyth 的 `expo` 指数字段
+   - 处理价格置信区间（confidence interval）
+
+2. **添加价格历史记录**
+   - 在合约中存储最近 N 次价格更新
+   - 实现 `getPriceHistory()` 视图函数
+
+3. **多资产价格支持**
+   - 修改合约支持多个交易对
+   - 每个交易对有独立的 `indexPrice` 和 `markPrice`
+
+4. **价格延迟保护**
+   - 记录 `lastPriceUpdateTime`
+   - 如果价格超过 N 分钟未更新，阻止新订单
+
+5. **Keeper 高可用**
+   - 实现多 Keeper 竞争上链
+   - 添加价格有效性检查（与上次差异过大则跳过）

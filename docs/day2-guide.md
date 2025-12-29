@@ -1,0 +1,395 @@
+# Day 2 - 订单簿与下单（OrderBook & PlaceOrder）
+
+本节目标：在 Day 1（保证金充值/提现 + 视图函数）已经完成的基础上，实现一个最小可运行的**限价单订单簿**：用户可以下单 `placeOrder`，订单会按价格优先排序进入链表；用户也可以撤单 `cancelOrder` 把订单从链表中移除。
+
+---
+
+## 1) 学习目标（面向学生）
+
+完成本节后，你将能够：
+
+- 理解“价格优先 + 同价 FIFO”在链上如何落到链表结构上。
+- 掌握有序单链表的插入与删除（空表/插头/插尾/中间删除）。
+- 理解 `hintId`：为什么需要、合约如何校验它、防止“同价插队”。
+- 学会继续用测试驱动实现：先读 `Day2OrderbookTest`，再补齐合约 TODO。
+
+---
+
+## 2) 前置准备（必须满足）
+
+Day2 是建立在 Day1 之上的，请先确认：
+
+- `deposit()` / `withdraw(uint256)` 已实现并能通过 `Day1MarginTest`
+- `margin(address)` / `getOrder(uint256)` 等 view 已实现（Day2 测试会读取订单与余额）
+
+你可以先跑：
+
+```bash
+cd contract
+forge test --match-contract Day1MarginTest -vvv
+```
+
+---
+
+## 3) 当天完成标准（Definition of Done）
+
+- `forge test --match-contract Day2OrderbookTest -vvv` 全部通过
+- 买单链表始终保持：**价格从高到低**（同价 FIFO）
+- 卖单链表始终保持：**价格从低到高**（同价 FIFO）
+- `hintId` 校验行为与测试一致：`invalid hint` / `hint too deep` / `hint not last`
+- `cancelOrder` 能正确移除订单并 `delete orders[id]`
+
+---
+
+## 4) 开发步骤（边理解边写代码）
+
+### Step 1: 读测试，先把规则写清楚
+
+打开：
+
+- `contract/test/Day2Orderbook.t.sol`
+
+你会看到三类要求：
+
+1. **排序正确**：更高买价变头、更低卖价变头
+2. **同价 FIFO**：同价单不能插队（第二单应在第一单后面）
+3. **hint 校验**：错误的 hint 必须 revert 且消息匹配
+
+> 注意：测试里 `price/amount` 直接用小整数写起来更直观；你实现排序逻辑时不需要关心精度，只要“同一套比较规则”在合约里一致即可。
+
+---
+
+### Step 2: 先看存储结构（你要改哪些指针）
+
+打开：
+
+- `contract/src/core/ExchangeStorage.sol`
+
+你会用到这些状态：
+
+- `mapping(uint256 => Order) public orders;`
+- `uint256 public bestBuyId;`
+- `uint256 public bestSellId;`
+- `uint256 internal orderIdCounter;`
+- `mapping(address => uint256) public pendingOrderCount;`
+
+---
+
+### Step 3: 实现 `_startFromHint`（Day2 的关键）
+
+修改：
+
+- `contract/src/modules/OrderBookModule.sol`
+
+`hintId` 的含义是：“我认为新订单应该插在 `hintId` 之后”。合约必须校验：
+
+- hint 存在（否则 `"invalid hint"`）
+- 价格关系不矛盾（否则 `"hint too deep"`）
+- 同价时必须插在该价位尾部（否则 `"hint not last"`，防止插队）
+
+参考实现（可直接照写）：
+
+```solidity
+function _startFromHint(bool isBuy, uint256 price, uint256 hintId)
+    internal
+    view
+    virtual
+    returns (uint256 prev, uint256 curr)
+{
+    if (hintId == 0) {
+        return (0, isBuy ? bestBuyId : bestSellId);
+    }
+
+    Order storage hint = orders[hintId];
+    require(hint.id != 0, "invalid hint");
+
+    if (isBuy) {
+        require(price <= hint.price, "hint too deep");
+        if (price == hint.price && hint.next != 0) {
+            require(orders[hint.next].price != price, "hint not last");
+        }
+    } else {
+        require(price >= hint.price, "hint too deep");
+        if (price == hint.price && hint.next != 0) {
+            require(orders[hint.next].price != price, "hint not last");
+        }
+    }
+
+    return (hintId, hint.next);
+}
+```
+
+---
+
+### Step 4: 实现 `_insertBuy` / `_insertSell`（把订单“入簿”）
+
+修改：
+
+- `contract/src/modules/OrderBookModule.sol`
+
+你要实现的两个排序规则：
+
+- 买单：价格降序；同价 FIFO（新单插在同价尾部）
+- 卖单：价格升序；同价 FIFO
+
+参考实现（买单）：
+
+```solidity
+function _insertBuy(Order memory incoming, uint256 hintId) internal virtual {
+    (uint256 prevId, uint256 currentId) = _startFromHint(true, incoming.price, hintId);
+
+    while (currentId != 0 && orders[currentId].price > incoming.price) {
+        prevId = currentId;
+        currentId = orders[currentId].next;
+    }
+    while (currentId != 0 && orders[currentId].price == incoming.price) {
+        prevId = currentId;
+        currentId = orders[currentId].next;
+    }
+
+    incoming.next = currentId;
+    orders[incoming.id] = incoming;
+
+    if (prevId == 0) bestBuyId = incoming.id;
+    else orders[prevId].next = incoming.id;
+
+    pendingOrderCount[incoming.trader]++;
+}
+```
+
+参考实现（卖单）：
+
+```solidity
+function _insertSell(Order memory incoming, uint256 hintId) internal virtual {
+    (uint256 prevId, uint256 currentId) = _startFromHint(false, incoming.price, hintId);
+
+    while (currentId != 0 && orders[currentId].price < incoming.price) {
+        prevId = currentId;
+        currentId = orders[currentId].next;
+    }
+    while (currentId != 0 && orders[currentId].price == incoming.price) {
+        prevId = currentId;
+        currentId = orders[currentId].next;
+    }
+
+    incoming.next = currentId;
+    orders[incoming.id] = incoming;
+
+    if (prevId == 0) bestSellId = incoming.id;
+    else orders[prevId].next = incoming.id;
+
+    pendingOrderCount[incoming.trader]++;
+}
+```
+
+---
+
+### Step 5: 实现 `_matchBuy` / `_matchSell`（Day2 用“无成交时入簿”就够）
+
+修改：
+
+- `contract/src/modules/OrderBookModule.sol`
+
+Day2 的测试里不会发生真实成交（例如只下买单，卖盘为空），所以你只要保证：
+
+- 如果对手盘为空/不满足价格，剩余量会入簿
+
+参考实现（保留 Day3 可扩展结构，成交部分留到 Day3 再补）：
+
+```solidity
+function _matchBuy(Order memory incoming, uint256 hintId) internal virtual {
+    while (incoming.amount > 0 && bestSellId != 0) {
+        Order storage head = orders[bestSellId];
+        if (incoming.price < head.price) break;
+
+        uint256 matched = Math.min(incoming.amount, head.amount);
+        _executeTrade(incoming.trader, head.trader, incoming.id, head.id, matched, head.price); // Day3 实现
+
+        incoming.amount -= matched;
+        head.amount -= matched;
+
+        if (head.amount == 0) {
+            uint256 nextHead = head.next;
+            uint256 removedId = head.id;
+            pendingOrderCount[head.trader]--;
+            delete orders[bestSellId];
+            bestSellId = nextHead;
+            emit OrderRemoved(removedId);
+        }
+    }
+
+    if (incoming.amount > 0) {
+        _insertBuy(incoming, hintId);
+        _checkWorstCaseMargin(incoming.trader); // Day2 可先实现成“结构化的骨架”
+    }
+}
+```
+
+`_matchSell` 同理（方向相反）。
+
+---
+
+### Step 6: 实现 `placeOrder`（把 Day2 路径串起来）
+
+修改：
+
+- `contract/src/modules/OrderBookModule.sol`
+
+你要把“参数检查 → 构造订单 → 进入 match → 入簿/删除”串起来。参考实现：
+
+```solidity
+function placeOrder(bool isBuy, uint256 price, uint256 amount, uint256 hintId)
+    external
+    virtual
+    nonReentrant
+    returns (uint256)
+{
+    require(price > 0 && amount > 0, "invalid params");
+
+    _applyFunding(msg.sender);
+
+    require(_countPendingOrders(msg.sender) < MAX_PENDING_ORDERS, "too many pending orders");
+    _checkWorstCaseMargin(msg.sender);
+
+    orderIdCounter += 1;
+    uint256 orderId = orderIdCounter;
+    emit OrderPlaced(orderId, msg.sender, isBuy, price, amount);
+
+    Order memory incoming = Order(orderId, msg.sender, isBuy, price, amount, amount, block.timestamp, 0);
+
+    if (isBuy) _matchBuy(incoming, hintId);
+    else _matchSell(incoming, hintId);
+
+    return orderId;
+}
+```
+
+---
+
+### Step 7: 实现撤单 `cancelOrder` + 链表删除 `_removeOrderFromList`
+
+修改：
+
+- `contract/src/modules/OrderBookModule.sol`
+
+撤单的核心是“从链表中摘掉节点 + 清理存储”。参考实现：
+
+```solidity
+function cancelOrder(uint256 orderId) external virtual nonReentrant {
+    Order storage o = orders[orderId];
+    require(o.id != 0, "order not found");
+    require(o.trader == msg.sender, "not your order");
+
+    if (o.isBuy) bestBuyId = _removeOrderFromList(bestBuyId, orderId);
+    else bestSellId = _removeOrderFromList(bestSellId, orderId);
+
+    pendingOrderCount[msg.sender]--;
+    emit OrderRemoved(orderId);
+    delete orders[orderId];
+}
+
+function _removeOrderFromList(uint256 head, uint256 targetId) internal returns (uint256 newHead) {
+    if (head == targetId) return orders[head].next;
+
+    uint256 prev = head;
+    uint256 curr = orders[head].next;
+    while (curr != 0) {
+        if (curr == targetId) {
+            orders[prev].next = orders[curr].next;
+            break;
+        }
+        prev = curr;
+        curr = orders[curr].next;
+    }
+    return head;
+}
+```
+
+---
+
+### Step 8: Day2 的保证金检查怎么写（先写“骨架”，不阻塞主线）
+
+你会在：
+
+- `contract/src/modules/MarginModule.sol`
+
+看到 `_calculatePositionMargin` / `_calculateWorstCaseMargin` / `_checkWorstCaseMargin` 的 TODO。
+
+Day2 的要求不是做完整风控，但为了后续 Day3+ 不返工，建议你把这三个函数按“真实结构”写出来：即便现在 `markPrice` 还没设置，计算出来的 `required` 很可能是 0，也不会影响 Day2 的订单簿测试。
+
+你可以按下面思路实现：
+
+- `_calculatePositionMargin`：`abs(size) * markPrice / 1e18 * initialMarginBps / 10000`
+- `_calculateWorstCaseMargin`：遍历买/卖链表，累加该用户挂单量，算“全买成交/全卖成交”两种持仓，取更大保证金
+- `_checkWorstCaseMargin`：`freeMargin + realizedPnl + unrealizedPnl >= required`
+
+参考实现（可直接照写；注意这里不强制要求 `markPrice > 0`，Day4 再收紧）：
+
+```solidity
+function _calculatePositionMargin(int256 size) internal view returns (uint256) {
+    if (size == 0 || markPrice == 0) return 0;
+    uint256 absSize = SignedMath.abs(size);
+    uint256 notional = (absSize * markPrice) / 1e18;
+    return (notional * initialMarginBps) / 10_000;
+}
+
+function _calculateWorstCaseMargin(address trader) internal view returns (uint256) {
+    Position memory pos = accounts[trader].position;
+
+    uint256 totalBuy = 0;
+    uint256 totalSell = 0;
+
+    uint256 id = bestBuyId;
+    while (id != 0) {
+        if (orders[id].trader == trader) totalBuy += orders[id].amount;
+        id = orders[id].next;
+    }
+
+    id = bestSellId;
+    while (id != 0) {
+        if (orders[id].trader == trader) totalSell += orders[id].amount;
+        id = orders[id].next;
+    }
+
+    int256 sizeIfAllBuy = pos.size + int256(totalBuy);
+    int256 sizeIfAllSell = pos.size - int256(totalSell);
+
+    uint256 marginIfAllBuy = _calculatePositionMargin(sizeIfAllBuy);
+    uint256 marginIfAllSell = _calculatePositionMargin(sizeIfAllSell);
+
+    return marginIfAllBuy > marginIfAllSell ? marginIfAllBuy : marginIfAllSell;
+}
+
+function _checkWorstCaseMargin(address trader) internal view {
+    uint256 required = _calculateWorstCaseMargin(trader);
+    Position memory p = accounts[trader].position;
+
+    int256 marginBalance =
+        int256(accounts[trader].freeMargin) + p.realizedPnl + _unrealizedPnl(p);
+
+    require(marginBalance >= int256(required), "insufficient margin");
+}
+```
+
+---
+
+## 5) 测试与验证
+
+### 5.1 运行 Day2 合约测试
+
+```bash
+cd contract
+forge test --match-contract Day2OrderbookTest -vvv
+```
+
+### 5.2 用前端做一次肉眼验证（可选）
+
+如果你跑本仓库前端，下单时通常会把输入用 `parseEther` 转为 `1e18` 精度；你只要在 UI 中连续下两个不同价格的买单/卖单，观察排序是否符合预期即可。
+
+---
+
+## 6) 常见问题（排错思路）
+
+1. **`hint not last` 一直触发**：你没有正确校验/维护“同价尾部”，或插入逻辑没有把新单放到同价末尾。
+2. **链表断了/循环了**：检查 `incoming.next`、`bestBuyId/bestSellId`、`orders[prev].next` 的赋值顺序。
+3. **撤单后链表顺序错**：`_removeOrderFromList` 没处理“删除头节点”的情况，或没正确连接 `prev.next`。
