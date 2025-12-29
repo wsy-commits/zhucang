@@ -1,20 +1,7 @@
-name: monad-exchange-indexer
-networks:
-  - id: 31337
-    rpc_config:
-      url: http://localhost:8545
-    start_block: 0
-    contracts:
-      - name: Exchange
-        address:
-          - "0xc868fc8ee3be6f2be0afa6bab3d24e8cc7e06be5"
-        handler: src/EventHandlers.ts
-        events:
-          - event: OrderPlaced(uint256 indexed id, address indexed trader, bool isBuy, uint256 price, uint256 amount)
-          - event: OrderRemoved(uint256 indexed id)
-          - event: TradeExecuted(uint256 indexed buyOrderId, uint256 indexed sellOrderId, uint256 price, uint256 amount, address buyer, address seller)
-          - event: MarginDeposited(address indexed trader, uint256 amount)
-          - event: MarginWithdrawn(address indexed trader, uint256 amount)
-field_selection:
-  transaction_fields:
-    - hash
+# Envio Indexer Config
+# Day 5: TODO - 配置你的索引器
+
+# 提示: 你需要配置:
+# 1. 网络信息 (Monad Testnet/Anvil)
+# 2. 合约地址
+# 3. 需要监听的事件 (MarginDeposited, TradeExecuted, etc.)

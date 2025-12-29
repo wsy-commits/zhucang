@@ -1,55 +1,9 @@
-type Trade @entity {
-  id: ID!
-  buyer: String!
-  seller: String!
-  price: BigInt!
-  amount: BigInt!
-  timestamp: Int!
-  txHash: String!
-  buyOrderId: BigInt!
-  sellOrderId: BigInt!
-}
+# Envio Indexer Schema
+# Day 5: TODO - 定义你的数据模型
 
-type Candle @entity {
-  id: ID! # "1m-timestamp"
-  resolution: String!
-  timestamp: Int!
-  openPrice: BigInt!
-  highPrice: BigInt!
-  lowPrice: BigInt!
-  closePrice: BigInt!
-  volume: BigInt!
-}
-
-type Order @entity {
-  id: ID!
-  trader: String!
-  isBuy: Boolean!
-  price: BigInt!
-  initialAmount: BigInt!
-  amount: BigInt!
-  status: String! # OPEN, FILLED, CANCELLED
-  timestamp: Int!
-}
-
-type Position @entity {
-  id: ID! # trader address
-  trader: String!
-  size: BigInt!
-  entryPrice: BigInt!
-  realizedPnl: BigInt!
-}
-
-type LatestCandle @entity {
-  id: ID! # "1"
-  closePrice: BigInt!
-  timestamp: Int!
-}
-
-type MarginEvent @entity {
-  id: ID!
-  trader: String!
-  amount: BigInt!
-  eventType: String! # DEPOSIT or WITHDRAW
-  timestamp: Int!
-}
+# 提示: 你可能需要定义以下实体:
+# 1. Trade (成交记录)
+# 2. Candle (K 线数据)
+# 3. Order (订单状态)
+# 4. Position (持仓信息)
+# 5. MarginEvent (保证金变动)
