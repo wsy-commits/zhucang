@@ -179,7 +179,7 @@ function liquidate(address trader, uint256 amount) external virtual nonReentrant
         p.realizedPnl -= int256(debt);
     }
     
-    emit Liquidated(trader, msg.sender, fee, 0);
+    emit Liquidated(trader, msg.sender, fee, 0); // 在 event 定义中，此位参数名已规范化为 amount
 }
 ```
 

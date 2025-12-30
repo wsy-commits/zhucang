@@ -386,6 +386,9 @@ forge test --match-contract Day2OrderbookTest -vvv
 
 如果你跑本仓库前端，下单时通常会把输入用 `parseEther` 转为 `1e18` 精度；你只要在 UI 中连续下两个不同价格的买单/卖单，观察排序是否符合预期即可。
 
+> [!TIP]
+> 仓库提供的 `OrderForm.tsx` 已包含对 `NaN` 与零值的拦截逻辑。这是 Web3 前端开发的关键：在调用合约之前拦截非法输入，避免产生无意义的 Gas 消耗或尴尬的 JavaScript 报错。
+
 ---
 
 ## 6) 常见问题（排错思路）
