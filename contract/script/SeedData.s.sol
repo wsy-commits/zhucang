@@ -15,10 +15,11 @@ contract SeedDataScript is Script {
 
     // Exchange Address (Deterministic for Anvil)
     // Exchange Address (Deterministic for Anvil - First Contract)
-    address internal constant EXCHANGE_ADDR = 0x5FbDB2315678afecb367f032d93F642f64180aa3;
+    address internal constant HARDCODED_EXCHANGE_ADDR = 0x5FbDB2315678afecb367f032d93F642f64180aa3;
 
     function run() external {
-        MonadPerpExchange exchange = MonadPerpExchange(EXCHANGE_ADDR);
+        address exchangeAddr = vm.envOr("VITE_EXCHANGE_ADDRESS", HARDCODED_EXCHANGE_ADDR);
+        MonadPerpExchange exchange = MonadPerpExchange(exchangeAddr);
 
         // 0. Set Initial Price (Operator)
         vm.startBroadcast(ALICE_PK); // Alice is deployer/operator

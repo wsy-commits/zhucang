@@ -26,11 +26,21 @@ export const OrderForm: React.FC = observer(() => {
   const handleOrder = async (side: OrderSide) => {
     try {
       setStatus(undefined);
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        throw new Error('Please enter a valid amount');
+      }
+
+      const parsedPriceVal = orderType === OrderType.LIMIT ? parseFloat(price) : 0;
+      if (orderType === OrderType.LIMIT && (isNaN(parsedPriceVal) || parsedPriceVal <= 0)) {
+        throw new Error('Please enter a valid price');
+      }
+
       await placeOrder({
         side,
         orderType,
         price: orderType === OrderType.MARKET ? undefined : price,
-        amount: (parseFloat(amount) * leverage).toString(),
+        amount: (parsedAmount * leverage).toString(),
         hintId,
       });
       setAmount('');

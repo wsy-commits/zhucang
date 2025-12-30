@@ -96,10 +96,12 @@ export const TradingChart: React.FC = observer(() => {
     };
   }, []); // Init once
 
-  // Update data when candles change
   useEffect(() => {
     if (!seriesRef.current) return;
     seriesRef.current.setData(chartData);
+    if (chartRef.current) {
+      chartRef.current.timeScale().fitContent();
+    }
   }, [candles]); // Re-run when candles change.
 
   return (
