@@ -11,7 +11,7 @@ export const Positions: React.FC = observer(() => {
 
   const displayPosition = useMemo(() => {
     if (!position || position.size === 0n) return undefined;
-    // Use formatEther to convert from wei to ETH units for display
+    // 使用 formatEther 将 wei 转换为 ETH 单位显示
     const entry = Number(formatEther(position.entryPrice));
     const mark = markPrice > 0n ? Number(formatEther(markPrice)) : entry;
     const size = Number(formatEther(position.size));
@@ -21,28 +21,27 @@ export const Positions: React.FC = observer(() => {
     const realized = Number(formatEther(position.realizedPnl));
     const pnl = unrealized + realized;
 
-    // Margin is in ETH (100). PnL is in ETH.
-    // margin in store is freeMargin.
+    // margin 是可用保证金 (freeMargin)，单位是 ETH
     const freeMargin = Number(formatEther(margin));
     const effectiveMargin = freeMargin + realized;
-    const mmRatio = 0.005; // 0.5% maintenance margin
+    const mmRatio = 0.005; // 0.5% 维持保证金率
 
     let liqPrice = 0;
     if (size > 0) {
-      // Long: (Entry * Size - Margin) / (Size * (1 - MM))
-      // Derived from: Margin + (Price - Entry)*Size = Price*Size*MM
-      // Margin - Entry*Size = Price*Size*MM - Price*Size = Price*Size*(MM - 1)
-      // Price = (Margin - Entry*Size) / (Size * (MM - 1))
-      //       = (Entry*Size - Margin) / (Size * (1 - MM))
+      // 多头强平价公式推导：
+      // 触发清算条件：保证金 + (当前价 - 入场价) × 仓位 = 当前价 × 仓位 × 维持保证金率
+      // 移项得：保证金 - 入场价 × 仓位 = 当前价 × 仓位 × (维持保证金率 - 1)
+      // 因为 (维持保证金率 - 1) 是负数，改写为：
+      // 当前价 = (入场价 × 仓位 - 保证金) / (仓位 × (1 - 维持保证金率))
       const numerator = entry * size - effectiveMargin;
       const denominator = size * (1 - mmRatio);
       liqPrice = numerator / denominator;
       if (liqPrice < 0) liqPrice = 0;
     } else {
-      // Short: (Margin + Entry * SizeAbs) / (SizeAbs * (1 + MM))
-      // Derived from: Margin + (Entry - Price)*SizeAbs = Price*SizeAbs*MM
-      // Margin + Entry*SizeAbs = Price*SizeAbs*MM + Price*SizeAbs = Price*SizeAbs*(1 + MM)
-      // Price = (Margin + Entry*SizeAbs) / (SizeAbs * (1 + MM))
+      // 空头强平价公式推导：
+      // 触发清算条件：保证金 + (入场价 - 当前价) × |仓位| = 当前价 × |仓位| × 维持保证金率
+      // 移项得：保证金 + 入场价 × |仓位| = 当前价 × |仓位| × (1 + 维持保证金率)
+      // 当前价 = (保证金 + 入场价 × |仓位|) / (|仓位| × (1 + 维持保证金率))
       const numerator = effectiveMargin + entry * absSize;
       const denominator = absSize * (1 + mmRatio);
       liqPrice = numerator / denominator;
@@ -50,9 +49,9 @@ export const Positions: React.FC = observer(() => {
 
     const totalMargin = Number(formatEther(margin));
 
-    // ROI Calculation (Return on Initial Margin)
-    // Initial Margin = Position Value * Initial Margin Rate
-    // We use the store's initialMarginBps (default 100 = 1%)
+    // ROI 计算（投资回报率 = 盈亏 / 初始保证金）
+    // 初始保证金 = 持仓价值 × 初始保证金率
+    // 使用 store 中的 initialMarginBps（默认 100 = 1%）
     const imBps = Number(store.initialMarginBps);
     const positionValue = entry * absSize;
     const initialMargin = positionValue * (imBps / 10000);

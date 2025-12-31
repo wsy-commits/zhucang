@@ -55,11 +55,11 @@ class ExchangeStore {
     makeAutoObservable(this);
     this.autoConnect();
     this.refresh();
-    // periodic refresh
+    // 定时刷新
     setInterval(() => {
       this.refresh().catch(() => { });
     }, 4000);
-    console.info('[store] exchange store initialized');
+    console.info('[store] 交易所 store 初始化完成');
   }
 
   ensureContract() {
@@ -120,7 +120,7 @@ class ExchangeStore {
   };
 
   mapOrder(data: any): OrderStruct {
-    // Check for named properties first (viem often returns array with named props)
+    // 优先检查命名属性（viem 通常返回带命名属性的数组）
     if (data && typeof data.price !== 'undefined') {
       return {
         id: data.id,
@@ -213,10 +213,10 @@ class ExchangeStore {
       if (!result.data?.Trade) return [];
 
       return result.data.Trade.map((t: any) => {
-        // Determine side based on Taker (who initiated the trade).
-        // The Taker always has the higher Order ID.
-        // If buyOrderId > sellOrderId, the Taker was a Buyer -> Side is Buy (Green)
-        // If sellOrderId > buyOrderId, the Taker was a Seller -> Side is Sell (Red)
+        // 根据 Taker（发起交易的一方）确定方向
+        // Taker 的订单 ID 总是更大
+        // 如果 buyOrderId > sellOrderId，Taker 是买方 -> 方向是买（绿色）
+        // 如果 sellOrderId > buyOrderId，Taker 是卖方 -> 方向是卖（红色）
         const buyId = BigInt(t.buyOrderId || 0);
         const sellId = BigInt(t.sellOrderId || 0);
         const side = buyId > sellId ? 'buy' : 'sell';
@@ -261,7 +261,7 @@ class ExchangeStore {
         this.markPrice = mark;
         this.indexPrice = index;
         this.initialMarginBps = imBps;
-        // Calculate estimated hourly funding rate using Binance formula
+        // 使用币安公式计算预估资金费率
         // F = P + clamp(I - P, 0.05%, -0.05%)
         if (index > 0n) {
           const m = Number(formatEther(mark));
@@ -288,7 +288,7 @@ class ExchangeStore {
           args: [this.account],
         } as any) as bigint;
 
-        // Fetch position from Indexer
+        // 从 Indexer 获取持仓
         let pos: PositionSnapshot = { size: 0n, entryPrice: 0n, realizedPnl: 0n };
         try {
           const posResult = await client.query(GET_POSITIONS, { trader: this.account.toLowerCase() }).toPromise();
