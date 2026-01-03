@@ -5,7 +5,7 @@ import { EXCHANGE_ABI } from '../onchain/abi';
 import { EXCHANGE_ADDRESS, EXCHANGE_DEPLOY_BLOCK } from '../onchain/config';
 import { chain, getWalletClient, publicClient, fallbackAccount, ACCOUNTS } from '../onchain/client';
 import { OrderBookItem, OrderSide, OrderType, PositionSnapshot, Trade, CandleData } from '../types';
-import { client, GET_CANDLES, GET_RECENT_TRADES, GET_POSITIONS, GET_OPEN_ORDERS } from './IndexerClient';
+// import { client, GET_CANDLES, GET_RECENT_TRADES, GET_POSITIONS, GET_OPEN_ORDERS } from './IndexerClient';
 
 type OrderStruct = {
   id: bigint;
@@ -80,15 +80,7 @@ class ExchangeStore {
       runInAction(() => (this.account = fallbackAccount.address));
       return;
     }
-    if (!this.walletClient || !('getAddresses' in this.walletClient)) return;
-    try {
-      const addrs = await (this.walletClient as any).getAddresses();
-      if (addrs.length > 0) {
-        runInAction(() => (this.account = addrs[0]));
-      }
-    } catch {
-      /* ignore */
-    }
+
   };
 
   connectWallet = async () => {
@@ -96,13 +88,7 @@ class ExchangeStore {
       runInAction(() => (this.error = 'No wallet configured'));
       return;
     }
-    if ('requestAddresses' in this.walletClient) {
-      const [addr] = await (this.walletClient as any).requestAddresses();
-      runInAction(() => (this.account = addr));
-    } else if ('getAddresses' in this.walletClient) {
-      const addrs = await (this.walletClient as any).getAddresses();
-      if (addrs.length > 0) runInAction(() => (this.account = addrs[0]));
-    } else if ((this.walletClient as any).account?.address) {
+    if ((this.walletClient as any).account?.address) {
       runInAction(() => (this.account = (this.walletClient as any).account.address));
     } else if (fallbackAccount) {
       runInAction(() => (this.account = fallbackAccount.address));
@@ -210,55 +196,12 @@ class ExchangeStore {
   };
 
   loadCandles = async () => {
-    try {
-      const result = await client.query(GET_CANDLES, {}).toPromise();
-      if (result.data?.Candle) {
-        const candles = result.data.Candle.map((c: any) => ({
-          time: new Date(c.timestamp * 1000).toISOString(), // or format as needed
-          open: Number(formatEther(c.openPrice)),
-          high: Number(formatEther(c.highPrice)),
-          low: Number(formatEther(c.lowPrice)),
-          close: Number(formatEther(c.closePrice)),
-          volume: Number(formatEther(c.volume)),
-        }));
-        runInAction(() => {
-          this.candles = candles;
-        });
-      }
-    } catch (e) {
-      console.error('[store] loadCandles failed', e);
-    }
+    // Open for implementation in Day 5
   };
 
   loadTrades = async (viewer?: Address): Promise<Trade[]> => {
-    try {
-      const result = await client.query(GET_RECENT_TRADES, {}).toPromise();
-      if (!result.data?.Trade) return [];
-
-      return result.data.Trade.map((t: any) => {
-        // 根据 Taker（发起交易的一方）确定方向
-        // Taker 的订单 ID 总是更大
-        // 如果 buyOrderId > sellOrderId，Taker 是买方 -> 方向是买（绿色）
-        // 如果 sellOrderId > buyOrderId，Taker 是卖方 -> 方向是卖（红色）
-        const buyId = BigInt(t.buyOrderId || 0);
-        const sellId = BigInt(t.sellOrderId || 0);
-        const side = buyId > sellId ? 'buy' : 'sell';
-
-        return {
-          id: t.id,
-          price: Number(formatEther(t.price)),
-          amount: Number(formatEther(t.amount)),
-          time: new Date(t.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          side,
-          buyer: t.buyer,
-          seller: t.seller,
-          txHash: t.txHash,
-        };
-      });
-    } catch (e) {
-      console.error('[store] loadTrades failed', e);
-      return [];
-    }
+    // Open for implementation in Day 3/5
+    return [];
   };
 
   refresh = async () => {
@@ -284,23 +227,8 @@ class ExchangeStore {
         this.markPrice = mark;
         this.indexPrice = index;
         this.initialMarginBps = imBps;
-        // 使用币安公式计算预估资金费率
-        // F = P + clamp(I - P, 0.05%, -0.05%)
-        if (index > 0n) {
-          const m = Number(formatEther(mark));
-          const i = Number(formatEther(index));
-          const premiumIndex = (m - i) / i;
-          const interestRate = 0.0001; // 0.01%
-          const clampRange = 0.0005;   // 0.05%
-
-          let diff = interestRate - premiumIndex;
-          if (diff > clampRange) diff = clampRange;
-          if (diff < -clampRange) diff = -clampRange;
-
-          this.fundingRate = premiumIndex + diff;
-        } else {
-          this.fundingRate = 0;
-        }
+        // Funding Rate calculation to be implemented in Day 6
+        this.fundingRate = 0;
       });
 
       if (this.account) {
@@ -311,21 +239,8 @@ class ExchangeStore {
           args: [this.account],
         } as any) as bigint;
 
-        // 从 Indexer 获取持仓
-        let pos: PositionSnapshot = { size: 0n, entryPrice: 0n, realizedPnl: 0n };
-        try {
-          const posResult = await client.query(GET_POSITIONS, { trader: this.account.toLowerCase() }).toPromise();
-          if (posResult.data?.Position?.[0]) {
-            const p = posResult.data.Position[0];
-            pos = {
-              size: BigInt(p.size),
-              entryPrice: BigInt(p.entryPrice),
-              realizedPnl: BigInt(p.realizedPnl),
-            };
-          }
-        } catch (e) {
-          console.error('[store] failed to fetch position from indexer', e);
-        }
+        // Position fetching from Indexer to be implemented in Day 5
+        let pos: PositionSnapshot = { size: 0n, entryPrice: 0n };
 
         runInAction(() => {
           this.margin = m;
@@ -388,43 +303,21 @@ class ExchangeStore {
         this.orderBook = { bids: this.formatOrderBook(bids, true), asks: this.formatOrderBook(asks, false) };
       });
 
-      try {
-        const trades = await this.loadTrades(this.account);
-        runInAction(() => {
-          this.trades = trades;
-        });
-      } catch (e) {
-        console.error('[store] loadTrades failed', e);
-      }
+      // Load Trades (Day 3/5)
+      // await this.loadTrades(this.account);
 
-      // Load Candles
-      this.loadCandles();
+      // Load Candles (Day 5)
+      // this.loadCandles();
 
+      // My Orders from Indexer (Day 5)
+      /*
       if (this.account) {
-        try {
-          const ordersResult = await client.query(GET_OPEN_ORDERS, { trader: this.account.toLowerCase() }).toPromise();
-          if (ordersResult.data?.Order) {
-            const mine = ordersResult.data.Order.map((o: any) => ({
-              id: BigInt(o.id),
-              isBuy: o.isBuy,
-              price: BigInt(o.price),
-              amount: BigInt(o.amount),
-              initialAmount: BigInt(o.initialAmount || o.amount), // Fallback if missing
-              timestamp: BigInt(o.timestamp),
-              trader: o.trader as Address,
-            }));
-            runInAction(() => {
-              this.myOrders = mine;
-            });
-          }
-        } catch (e) {
-          console.error('[store] failed to fetch open orders from indexer', e);
-        }
-      } else {
-        runInAction(() => {
-          this.myOrders = [];
-        });
+         // ... fetch from indexer
       }
+      */
+      runInAction(() => {
+        this.myOrders = [];
+      });
     } catch (e) {
       runInAction(() => (this.error = (e as Error)?.message || 'Failed to sync exchange data'));
     } finally {
