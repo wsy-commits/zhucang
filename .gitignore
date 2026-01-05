@@ -25,6 +25,9 @@ indexer/generated/
 output/
 process/
 
+# === Verification Tools ===
+VERIFY_DAY_GUIDE.md
+
 # === IDE ===
 .vscode/
 .idea/
