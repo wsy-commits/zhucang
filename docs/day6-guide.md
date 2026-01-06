@@ -139,9 +139,8 @@ function _applyFunding(address trader) internal virtual {
         // 需要支付
         uint256 pay = uint256(payment);
         if (pay > free) {
-            uint256 debt = pay - free;
+            // debt 情况：freeMargin 不足，全部扣除
             a.freeMargin = 0;
-            p.realizedPnl -= int256(debt);
         } else {
             a.freeMargin = free - pay;
         }
@@ -192,28 +191,56 @@ function _unrealizedPnl(Position memory p) internal view returns (int256) {
 
 ---
 
-### Step 5: 配置 Keeper 定时结算
+### Step 5: 实现 FundingKeeper 定时结算
 
-修改：
+修改：`keeper/src/services/FundingKeeper.ts`
 
-- `keeper/src/services/FundingKeeper.ts`（如果存在）
-
-或在现有 Keeper 中添加：
+FundingKeeper 负责定时检查是否需要结算全局资金费率，在 `checkAndSettle` 方法中实现：
 
 ```typescript
-// 每小时触发一次资金费率结算
-async function settleFunding() {
-    const hash = await walletClient.writeContract({
-        address: EXCHANGE_ADDRESS,
-        abi: EXCHANGE_ABI,
-        functionName: 'settleFunding',
-        args: []
-    });
-    console.log('[FundingKeeper] Settlement tx:', hash);
-}
+private async checkAndSettle() {
+    try {
+        // Step 1: 读取合约状态
+        const lastFundingTime = await publicClient.readContract({
+            address: ADDRESS as `0x${string}`,
+            abi: EXCHANGE_ABI,
+            functionName: 'lastFundingTime',
+        }) as bigint;
 
-setInterval(settleFunding, 60 * 60 * 1000); // 1 hour
+        const fundingInterval = await publicClient.readContract({
+            address: ADDRESS as `0x${string}`,
+            abi: EXCHANGE_ABI,
+            functionName: 'fundingInterval',
+        }) as bigint;
+
+        // Step 2: 判断是否需要结算
+        const now = BigInt(Math.floor(Date.now() / 1000));
+        if (now < lastFundingTime + fundingInterval) {
+            console.log(`[FundingKeeper] Not yet time. Next settlement in ${Number(lastFundingTime + fundingInterval - now)}s`);
+            return;
+        }
+
+        // Step 3: 调用 settleFunding
+        console.log('[FundingKeeper] Time to settle funding...');
+        const hash = await walletClient.writeContract({
+            address: ADDRESS as `0x${string}`,
+            abi: EXCHANGE_ABI,
+            functionName: 'settleFunding',
+            args: []
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+        console.log(`[FundingKeeper] Settlement tx: ${hash}`);
+
+    } catch (e) {
+        console.error('[FundingKeeper] Error:', e);
+    }
+}
 ```
+
+**工作原理**：
+1. 读取 `lastFundingTime` 和 `fundingInterval`
+2. 判断 `now >= lastFundingTime + fundingInterval`
+3. 满足条件时调用 `settleFunding()` 触发全局费率更新
 
 ---
 
@@ -251,11 +278,66 @@ const liqPrice = (entry * size - effectiveMargin) / (size * (1 - mmRatio));
 
 ### 5.1 为什么用累计费率（cumulativeFundingRate）？
 
-如果用户不频繁交易，结算时只需计算一次差值：
+**问题**：如果每次结算都遍历所有持仓用户扣钱，gas 成本极高。
+
+**解决方案**：用**累计费率 + 延迟结算**模式，将结算分为两个部分：
+
+| 函数 | 职责 | 频率 |
+|------|------|------|
+| `settleFunding()` | 计算并累加全局费率 | 每 interval 一次（如每小时） |
+| `_applyFunding(trader)` | 根据费率差值结算用户保证金 | 用户操作时触发 |
+
+**核心数据结构**：
+```
+全局: cumulativeFundingRate = r1 + r2 + r3 + ...  (不断累加)
+用户: lastFundingIndex[trader] = 用户上次结算时的全局费率
+```
+
+当用户操作时，一次性结算所有累计的资金费：
+```
+Payment = Size × Mark × (cumulativeFundingRate - lastFundingIndex[trader])
+```
+
+**时间线示例**：
 
 ```
-Payment = Size × Mark × (currentRate - lastUserRate)
+─────────────────────────────────────────────────────────────►
+    T1         T2         T3         T4         T5
+    │          │          │          │          │
+    ├─ r=1% ──►├─ r=2% ──►├─ r=1% ──►├─ r=1% ──►│
+    │          │          │          │          │
+   Alice       │         Bob        Alice      Bob
+   开仓        │         开仓       平仓       平仓
+              累计=1%   累计=3%    累计=4%    累计=5%
 ```
+
+**Alice 的结算**（T1 开仓，T4 平仓）：
+- T1: Alice 开多仓，`lastFundingIndex[Alice] = 0`
+- T4: Alice 平仓，触发 `_applyFunding(Alice)`
+  - diff = 4% - 0% = **4%**
+  - Alice 支付 4% 资金费
+
+**Bob 的结算**（T3 开仓，T5 平仓）：
+- T3: Bob 开多仓，此时全局累计已是 3%
+  - 关键：`_applyFunding` 检测到 Bob 无持仓，直接设置 `lastFundingIndex[Bob] = 3%`
+  - Bob 的"起点"从 3% 开始，**不需要支付之前累积的费用**
+- T5: Bob 平仓
+  - diff = 5% - 3% = **2%**
+  - Bob 只支付 2% 资金费
+
+**代码实现**（见 `_applyFunding`）：
+```solidity
+if (p.size == 0) {
+    // 无持仓时，更新起点为当前全局费率
+    lastFundingIndex[trader] = cumulativeFundingRate;
+    return;
+}
+```
+
+**好处**：
+- 不需要每小时遍历所有用户
+- 新用户只从开仓时刻开始计费
+- 老用户即使很久不操作，一次结算即可算清所有累计费用
 
 ### 5.2 资金费公式详解
 
@@ -314,11 +396,74 @@ forge test --match-contract Day6FundingTest -vvv
 ./quickstart.sh
 ```
 
-打开 `http://localhost:3000`，验证：
+打开 `http://localhost:3000`，验证资金费率显示：
 
-1. 下单成交后，等待 1 小时（或修改 interval 为短时间测试）
-2. 观察 Positions 组件显示资金费变化
-3. 确认多头/空头保证金按预期变化
+**Step 1: 检查资金费率显示**
+
+1. 在页面顶部或价格区域，应该能看到 "Funding Rate" 字段
+2. 当 Mark Price > Index Price 时，资金费率为正（多头付空头）
+3. 当 Mark Price < Index Price 时，资金费率为负（空头付多头）
+
+**Step 2: 验证资金费率计算**
+
+假设当前价格：
+- Mark Price: 101 MON
+- Index Price: 100 MON
+
+预期资金费率计算：
+```
+Premium = (101 - 100) / 100 = 0.01 (1%)
+diff = 0.0001 - 0.01 = -0.0099, clamp 到 -0.0005
+Rate = 0.01 + (-0.0005) = 0.0095 (0.95%)
+```
+
+页面应显示约 `0.95%` 的资金费率。
+
+> 注意：合约有 `maxFundingRatePerInterval` 上限保护，极端价格偏离时费率会被 cap。
+
+**Step 3: 测试资金费结算（可选）**
+
+由于默认 `fundingInterval` 为 1 小时，实际测试时可以：
+
+1. 在合约部署后，用管理员调用缩短 interval：
+   ```bash
+   cast send $EXCHANGE "setFundingParams(uint256,int256)" 60 "50000000000000000" \
+     --rpc-url $RPC --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+   ```
+   这将 interval 设为 60 秒，maxRate 设为 5%。
+
+2. 下单建仓后等待 1 分钟
+3. 刷新页面，观察保证金变化
+
+**预期结果：**
+- 多头（Mark > Index）：保证金减少
+- 空头（Mark > Index）：保证金增加
+
+### 6.3 Keeper 验证
+
+启动 Keeper 服务验证 FundingKeeper 是否正常工作：
+
+```bash
+cd keeper && pnpm start
+```
+
+**预期日志输出：**
+
+```
+--- Monad Exchange Keeper Service ---
+[PriceKeeper] Starting price updates every 1000ms...
+[FundingKeeper] Starting funding settlement checks every 60000ms...
+[FundingKeeper] Not yet time. Next settlement in 3542s
+```
+
+如果 `fundingInterval` 已到期且 `indexPrice > 0`，会看到：
+
+```
+[FundingKeeper] Time to settle funding...
+[FundingKeeper] Settlement tx: 0x...
+```
+
+> 注意：默认 `fundingInterval` 为 1 小时。测试时可用 `setFundingParams` 缩短为 60 秒。
 
 ---
 
@@ -350,9 +495,18 @@ forge test --match-contract Day6FundingTest -vvv
 
 Day 6 会触发 `FundingUpdated` 和 `FundingPaid` 事件。
 
-### Step 1: 定义 FundingEvent Schema
+### Step 1: 配置事件监听
 
-在 `indexer/schema.graphql` 中添加：
+在 `indexer/config.yaml` 的 `events` 列表中添加：
+
+```yaml
+      - event: FundingUpdated(int256 cumulativeFundingRate, uint256 timestamp)
+      - event: FundingPaid(address indexed trader, int256 amount)
+```
+
+### Step 2: 定义 FundingEvent Schema
+
+在 `indexer/schema.graphql` 中添加（注意：修改后需运行 `pnpm codegen`）：
 
 ```graphql
 type FundingEvent @entity {
@@ -365,9 +519,15 @@ type FundingEvent @entity {
 }
 ```
 
-### Step 2: 实现 Funding Event Handlers
+### Step 3: 实现 Funding Event Handlers
 
-在 `indexer/src/EventHandlers.ts` 中添加：
+在 `indexer/src/EventHandlers.ts` 中添加（先添加 import）：
+
+```typescript
+import { Exchange, MarginEvent, Order, Trade, Position, Candle, LatestCandle, FundingEvent } from "../generated";
+```
+
+然后添加 handlers：
 
 ```typescript
 Exchange.FundingUpdated.handler(async ({ event, context }) => {
@@ -393,6 +553,100 @@ Exchange.FundingPaid.handler(async ({ event, context }) => {
     };
     context.FundingEvent.set(entity);
 });
+```
+
+### Step 4: 验证 Indexer
+
+**启动服务：**
+
+```bash
+# 终端 1: 启动本地链并部署合约
+./scripts/run-anvil-deploy.sh
+
+# 终端 2: 启动 Indexer
+cd indexer && pnpm codegen && pnpm dev
+```
+
+**触发资金费率事件：**
+
+资金费率需要满足两个条件才会触发：
+1. `indexPrice > 0`（需要先设置价格）
+2. 时间过了 `fundingInterval`（默认 1 小时）
+
+**权限说明：**
+- `updateIndexPrice()` - 需要 `OPERATOR_ROLE`（Anvil Account 0）
+- `setFundingParams()` - 需要 `ADMIN_ROLE`（部署者地址）
+
+测试时可以用 `cast` 手动触发：
+
+```bash
+# 设置环境变量
+export EXCHANGE=<部署的合约地址>
+export RPC=http://127.0.0.1:8545
+export PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80  # Account 0 (OPERATOR)
+
+# Step 1: 设置价格（使用 OPERATOR 账户）
+cast send $EXCHANGE "updateIndexPrice(uint256)" 100000000000000000000 \
+  --rpc-url $RPC --private-key $PK
+
+# Step 2: 缩短 fundingInterval 为 10 秒（需要 ADMIN 权限）
+# 注意：ADMIN 是部署者地址，从部署日志获取 private key
+export DEPLOYER_PK=<部署日志中的 ephemeral deployer key>
+cast send $EXCHANGE "setFundingParams(uint256,int256)" 10 50000000000000000 \
+  --rpc-url $RPC --private-key $DEPLOYER_PK
+
+# Step 3: 等待超过 interval
+sleep 12
+
+# Step 4: 触发资金费结算
+cast send $EXCHANGE "settleFunding()" --rpc-url $RPC --private-key $PK
+
+# Step 5: 检查累计费率
+cast call $EXCHANGE "cumulativeFundingRate()" --rpc-url $RPC
+```
+
+**GraphQL 验证：**
+
+打开 http://localhost:8080/console 执行查询：
+
+```graphql
+query {
+  FundingEvent(order_by: { timestamp: desc }, limit: 10) {
+    id
+    eventType
+    trader
+    cumulativeRate
+    payment
+    timestamp
+  }
+}
+```
+
+**预期结果示例：**
+
+```json
+{
+  "data": {
+    "FundingEvent": [
+      {
+        "id": "0x...-0",
+        "eventType": "GLOBAL_UPDATE",
+        "trader": null,
+        "cumulativeRate": "499500000000000000",
+        "payment": null,
+        "timestamp": 1234567890
+      },
+      {
+        "id": "0x...-1",
+        "eventType": "USER_PAID",
+        "trader": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "cumulativeRate": null,
+        "payment": "14985000000000000000000",
+        "timestamp": 1234567890
+      }
+    ]
+  }
+}
 ```
 
 ---

@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import "./utils/ExchangeFixture.sol";
 
-// Day 5: 资金费率
-contract Day5FundingTest is ExchangeFixture {
+// Day 6: 资金费率
+contract Day6FundingTest is ExchangeFixture {
     function setUp() public override {
         super.setUp();
         _deposit(alice, 50_000 ether);
