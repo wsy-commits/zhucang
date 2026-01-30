@@ -1,35 +1,22 @@
-# === System ===
-.DS_Store
-*.log
-.env.local
-*.local
-
-# === Dependencies ===
+# dependencies
 node_modules/
+frontend/node_modules/
+contract/node_modules/
 
-# === Build Outputs ===
+# build output
 dist/
-out/
-cache/
-
-# === Contract (Foundry) ===
-contract/lib/
-contract/broadcast/
-contract/cache/
-contract/out/
-
-# === Indexer (Envio) ===
-indexer/generated/
-
-# === Temporary/Debug ===
+frontend/dist/
 output/
-process/
 
-# === Verification Tools ===
-VERIFY_DAY_GUIDE.md
+# env
+.env
+.env.local
 
-# === IDE ===
-.vscode/
-.idea/
+# logs
+*.log
 
-frontend/onchain/ExchangeABI.ts
+# OS
+.DS_Store
+Thumbs.db
+
+
