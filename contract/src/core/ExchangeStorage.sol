@@ -4,6 +4,12 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+// ✅ 新增：保证金模式枚举（定义在合约外部以便全局访问）
+enum MarginMode {
+    CROSS,      // 全仓模式：所有仓位共享保证金
+    ISOLATED    // 逐仓模式：每个仓位独立保证金
+}
+
 /// @title ExchangeStorage
 /// @notice 永续合约交易所的共享状态、结构体、事件和角色定义
 /// @dev 所有模块继承此合约以共享存储布局
@@ -43,16 +49,18 @@ abstract contract ExchangeStorage is AccessControl, ReentrancyGuard {
         uint256 next;         // 链表中下一个订单 ID
     }
 
-    /// @notice 持仓结构体
+    /// @notice 持仓结构体（扩展版）
     struct Position {
-        int256 size;          // 持仓数量 (正=多头, 负=空头)
-        uint256 entryPrice;   // 入场价格 (加权平均)
+        int256 size;              // 持仓数量 (正=多头, 负=空头)
+        uint256 entryPrice;       // 入场价格 (加权平均)
+        MarginMode mode;          // ✅ 新增：保证金模式
+        uint256 isolatedMargin;   // ✅ 新增：逐仓保证金（仅逐仓模式使用）
     }
 
-    /// @notice 账户结构体
+    /// @notice 账户结构体（修改版）
     struct Account {
-        uint256 margin;       // 账户保证金 (MON)
-        Position position;    // 用户持仓
+        uint256 crossMargin;      // ✅ 重命名：全仓保证金池（原 margin）
+        Position position;        // 用户持仓（现包含 mode 和 isolatedMargin）
     }
 
     // ============================================
@@ -141,6 +149,16 @@ abstract contract ExchangeStorage is AccessControl, ReentrancyGuard {
     
     /// @notice 订单移除事件 (成交或取消)
     event OrderRemoved(uint256 indexed id);
+
+    // ========== ✅ 新增：保证金模式相关事件 ==========
+    /// @notice 保证金模式变更事件
+    event MarginModeChanged(address indexed trader, MarginMode mode);
+
+    /// @notice 保证金分配事件（全仓→逐仓）
+    event IsolatedMarginAllocated(address indexed trader, uint256 amount);
+
+    /// @notice 保证金回收事件（逐仓→全仓）
+    event IsolatedMarginRemoved(address indexed trader, uint256 amount);
     
     /// @notice 成交事件
     event TradeExecuted(

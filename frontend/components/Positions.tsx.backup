@@ -198,7 +198,14 @@ export const Positions: React.FC = observer(() => {
         {activeTab === 'openorders' && (
           <table className="w-full text-left">
             <thead>
-              <tr className="text-[10px] text-gray-500 uppercase tracking-wider"><th className="pb-3 pl-2">Id</th><th className="pb-3 text-right">Side</th><th className="pb-3 text-right">Price</th><th className="pb-3 text-right">Progress</th><th className="pb-3 text-right">Placed</th><th className="pb-3 text-right pr-2">Action</th></tr>
+              <tr className="text-[10px] text-gray-500 uppercase tracking-wider">
+                <th className="pb-3 pl-2">Id</th>
+                <th className="pb-3 text-right">Side</th>
+                <th className="pb-3 text-right">Price</th>
+                <th className="pb-3 text-right">Progress</th>
+                <th className="pb-3 text-right">Placed</th>
+                <th className="pb-3 text-right pr-2">Action</th>
+              </tr>
             </thead>
             <tbody className="text-sm">
               {myOrders.map((o) => (
@@ -255,7 +262,12 @@ export const Positions: React.FC = observer(() => {
         {activeTab === 'history' && (
           <table className="w-full text-left">
             <thead>
-              <tr className="text-[10px] text-gray-500 uppercase tracking-wider"><th className="pb-3 pl-2">Side</th><th className="pb-3 text-right">Price</th><th className="pb-3 text-right">Amount</th><th className="pb-3 text-right">Time</th></tr>
+              <tr className="text-[10px] text-gray-500 uppercase tracking-wider">
+                <th className="pb-3 pl-2">Side</th>
+                <th className="pb-3 text-right">Price</th>
+                <th className="pb-3 text-right">Amount</th>
+                <th className="pb-3 text-right">Time</th>
+              </tr>
             </thead>
             <tbody className="text-sm">
               {myTrades.map((t) => (

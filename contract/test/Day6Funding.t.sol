@@ -15,9 +15,9 @@ contract Day6FundingTest is ExchangeFixture {
     function testFundingFlowsFromLongToShort() public {
         // 用例：mark 高于 index，long 支付、short 获得资金费
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 200 ether, 0);
+        exchange.placeOrder(true, 100 ether, 200 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 200 ether, 0);
+        exchange.placeOrder(false, 100 ether, 200 ether, 0, MarginMode.CROSS);
 
         exchange.updatePrices(150 ether, 100 ether);
         vm.warp(block.timestamp + exchange.fundingInterval());
@@ -82,9 +82,9 @@ contract Day6FundingTest is ExchangeFixture {
 
         // A 与 B 建仓：A 多、B 空
         vm.prank(alice);
-        exchange.placeOrder(true, price, sizeA, 0);
+        exchange.placeOrder(true, price, sizeA, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, price, sizeA, 0);
+        exchange.placeOrder(false, price, sizeA, 0, MarginMode.CROSS);
 
         // 第一次资金费率：mark=150,index=100
         // Premium = 0.5. Rate = 0.4995.
@@ -120,9 +120,9 @@ contract Day6FundingTest is ExchangeFixture {
 
         // C 此时加入，与 B 再撮合 500
         vm.prank(carol);
-        exchange.placeOrder(true, price, sizeC, 0);
+        exchange.placeOrder(true, price, sizeC, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, price, sizeC, 0);
+        exchange.placeOrder(false, price, sizeC, 0, MarginMode.CROSS);
 
         // 第三次资金费率：mark=300,index=100
         // Premium = 2.0. Rate = 1.9995.
@@ -155,9 +155,9 @@ contract Day6FundingTest is ExchangeFixture {
         exchange.setFundingParams(30 minutes, 5e16);
 
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 100 ether, 0);
+        exchange.placeOrder(true, 100 ether, 100 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 100 ether, 0);
+        exchange.placeOrder(false, 100 ether, 100 ether, 0, MarginMode.CROSS);
 
         exchange.updatePrices(500 ether, 100 ether); // diff/index = 4, rateRaw=4/24=0.166... => 会被 cap
         vm.warp(block.timestamp + 30 minutes);
@@ -174,9 +174,9 @@ contract Day6FundingTest is ExchangeFixture {
     function testFundingShortPaysWhenMarkBelowIndex() public {
         // 用例：mark < index，空头支付资金费给多头
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 100 ether, 0);
+        exchange.placeOrder(true, 100 ether, 100 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 100 ether, 0);
+        exchange.placeOrder(false, 100 ether, 100 ether, 0, MarginMode.CROSS);
 
         exchange.updatePrices(80 ether, 100 ether); // mark discount
         vm.warp(block.timestamp + exchange.fundingInterval());
@@ -219,9 +219,9 @@ contract Day6FundingTest is ExchangeFixture {
         // 用例：有盈利持仓时，考虑未实现盈亏后仍满足维持保证金，提取成功
         // alice 开多头 100 size @ 100 价格，bob 作为对手方
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 100 ether, 0);
+        exchange.placeOrder(true, 100 ether, 100 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 100 ether, 0);
+        exchange.placeOrder(false, 100 ether, 100 ether, 0, MarginMode.CROSS);
 
         // 价格涨到 150，alice 有未实现盈利
         exchange.updatePrices(150 ether, 150 ether);
@@ -240,9 +240,9 @@ contract Day6FundingTest is ExchangeFixture {
     function testWithdrawRevertsWhenWouldTriggerLiquidation() public {
         // 用例：提取后 marginBalance < maintenance，应该 revert
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 100 ether, 0);
+        exchange.placeOrder(true, 100 ether, 100 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 100 ether, 0);
+        exchange.placeOrder(false, 100 ether, 100 ether, 0, MarginMode.CROSS);
 
         // 价格跌到 80，alice 有未实现亏损
         exchange.updatePrices(80 ether, 80 ether);
@@ -262,9 +262,9 @@ contract Day6FundingTest is ExchangeFixture {
     function testWithdrawAtExactMaintenanceBoundary() public {
         // 用例：刚好在维持保证金边界时，提取成功
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 100 ether, 0);
+        exchange.placeOrder(true, 100 ether, 100 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 100 ether, 0);
+        exchange.placeOrder(false, 100 ether, 100 ether, 0, MarginMode.CROSS);
 
         exchange.updatePrices(80 ether, 80 ether);
         // unrealizedPnl = -2,000 ether
@@ -282,9 +282,9 @@ contract Day6FundingTest is ExchangeFixture {
     function testWithdrawOneWeiBelowMaintenanceReverts() public {
         // 用例：比维持保证金少 1 wei 时，应该 revert
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 100 ether, 0);
+        exchange.placeOrder(true, 100 ether, 100 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 100 ether, 0);
+        exchange.placeOrder(false, 100 ether, 100 ether, 0, MarginMode.CROSS);
 
         exchange.updatePrices(80 ether, 80 ether);
         // 边界是 47,960 ether，多提 1 wei 应该 revert

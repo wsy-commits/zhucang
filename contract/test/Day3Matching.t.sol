@@ -14,9 +14,9 @@ contract Day3MatchingTest is ExchangeFixture {
     function testMatchingUpdatesPositions() public {
         // 用例：部分成交后，挂单剩余数量更新，双方持仓方向/价格正确
         vm.prank(alice);
-        uint256 buyId = exchange.placeOrder(true, 100 ether, 2 ether, 0);
+        uint256 buyId = exchange.placeOrder(true, 100 ether, 2 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 90 ether, 1 ether, 0); // 部分吃单
+        exchange.placeOrder(false, 90 ether, 1 ether, 0, MarginMode.CROSS); // 部分吃单
 
         MonadPerpExchange.Order memory updatedBuy = exchange.getOrder(buyId);
         assertEq(updatedBuy.amount, 1 ether, "order should partially remain");
@@ -31,10 +31,10 @@ contract Day3MatchingTest is ExchangeFixture {
     function testBuyBelowBestAskDoesNotMatch() public {
         // 用例：买价低于最优卖，双方订单应留在簿上不成交
         vm.prank(bob);
-        uint256 askId = exchange.placeOrder(false, 150 ether, 1 ether, 0);
+        uint256 askId = exchange.placeOrder(false, 150 ether, 1 ether, 0, MarginMode.CROSS);
 
         vm.prank(alice);
-        uint256 bidId = exchange.placeOrder(true, 100 ether, 1 ether, 0);
+        uint256 bidId = exchange.placeOrder(true, 100 ether, 1 ether, 0, MarginMode.CROSS);
 
         assertEq(exchange.bestSellId(), askId, "ask should stay on book");
         assertEq(exchange.bestBuyId(), bidId, "bid should rest as best bid");
@@ -45,14 +45,14 @@ contract Day3MatchingTest is ExchangeFixture {
     function testClosingPositionRealizesPnl() public {
         // 用例：反向平仓应结算已实现盈亏并清空仓位
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 1 ether, 0);
+        exchange.placeOrder(false, 100 ether, 1 ether, 0, MarginMode.CROSS);
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 1 ether, 0); // alice long @100
+        exchange.placeOrder(true, 100 ether, 1 ether, 0, MarginMode.CROSS); // alice long @100
 
         vm.prank(alice);
-        exchange.placeOrder(false, 150 ether, 1 ether, 0); // place closing ask
+        exchange.placeOrder(false, 150 ether, 1 ether, 0, MarginMode.CROSS); // place closing ask
         vm.prank(bob);
-        exchange.placeOrder(true, 150 ether, 1 ether, 0); // bob lifts
+        exchange.placeOrder(true, 150 ether, 1 ether, 0, MarginMode.CROSS); // bob lifts
 
         MonadPerpExchange.Position memory pa = exchange.getPosition(alice);
         assertEq(pa.size, 0, "position closed");
@@ -63,16 +63,16 @@ contract Day3MatchingTest is ExchangeFixture {
     function testTakerCrossesMultipleAsksAndReleasesLockedMargin() public {
         // 用例：taker 一次吃多档卖单，逐笔解锁锁定保证金且订单簿更新
         vm.prank(bob);
-        exchange.placeOrder(false, 120 ether, 1 ether, 0); // ask1
+        exchange.placeOrder(false, 120 ether, 1 ether, 0, MarginMode.CROSS); // ask1
         vm.prank(bob);
-        exchange.placeOrder(false, 110 ether, 1 ether, 0); // ask2
+        exchange.placeOrder(false, 110 ether, 1 ether, 0, MarginMode.CROSS); // ask2
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 1 ether, 0); // ask3 (best)
+        exchange.placeOrder(false, 100 ether, 1 ether, 0, MarginMode.CROSS); // ask3 (best)
 
         // uint256 lockedBefore = exchange.lockedMargin(bob); // No longer exists
 
         vm.prank(alice);
-        exchange.placeOrder(true, 130 ether, 3 ether, 0); // taker crosses all
+        exchange.placeOrder(true, 130 ether, 3 ether, 0, MarginMode.CROSS); // taker crosses all
 
         assertEq(exchange.bestSellId(), 0, "orderbook cleared");
         // assertEq(exchange.lockedMargin(bob), 0, "locked margin released after fills"); // No longer exists

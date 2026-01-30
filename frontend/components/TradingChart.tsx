@@ -7,33 +7,30 @@ import { formatEther } from 'viem';
 export const TradingChart: React.FC = observer(() => {
   const { candles, currentPrice } = useExchangeStore();
   console.log('[TradingChart] candles from store:', candles);
+  console.log('[TradingChart] candles length:', candles.length);
+
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 
-  // Sort candles by time (ascending) for TradingView
-  // Indexer returns descending, so we reverse.
-  // We also need to ensure unique timestamps if any.
-  const sortedCandles = [...candles]
-    .reverse()
-    .map(c => ({
-      time: c.time.split('T')[0] === new Date().toISOString().split('T')[0]
-        ? (new Date(c.time).getTime() / 1000) as any // Use timestamp for intraday
-        : c.time.split('T')[0], // Use string for daily? Actually for 1m candles timestamp is best.
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-
-  // Fix: lightweight-charts prefers unix timestamp (seconds) for intraday data
-  const chartData = [...candles].reverse().map(c => ({
+  // Convert candles to chart format
+  // Note: candles from store are already in ascending order (oldest first)
+  const chartData = candles.map(c => ({
     time: Math.floor(new Date(c.time).getTime() / 1000) as any,
-    open: c.open,
-    high: c.high,
-    low: c.low,
-    close: c.close,
+    open: Number(c.open),
+    high: Number(c.high),
+    low: Number(c.low),
+    close: Number(c.close),
   }));
+
+  // 🔍 验证 chartData 顺序
+  if (chartData.length > 1) {
+    const firstTime = chartData[0].time;
+    const secondTime = chartData[1].time;
+    console.log('[TradingChart] chartData[0].time:', firstTime, '(', new Date(firstTime * 1000).toISOString(), ')');
+    console.log('[TradingChart] chartData[1].time:', secondTime, '(', new Date(secondTime * 1000).toISOString(), ')');
+    console.log('[TradingChart] Order check:', firstTime < secondTime ? '✅ ASCENDING' : '❌ DESCENDING');
+  }
 
   useEffect(() => {
     if (!chartContainerRef.current) return;

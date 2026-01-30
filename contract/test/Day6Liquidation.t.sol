@@ -20,15 +20,15 @@ contract Day6LiquidationTest is ExchangeFixture {
         
         // 1. Alice Longs 10 @ 100
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 10 ether, 0);
+        exchange.placeOrder(true, 100 ether, 10 ether, 0, MarginMode.CROSS);
         
         // 2. Bob Shorts 10 @ 100 (Match)
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 10 ether, 0);
+        exchange.placeOrder(false, 100 ether, 10 ether, 0, MarginMode.CROSS);
         
         // 3. Carol places Buy Orders at 80 (Liquidity for liquidation)
         vm.prank(carol);
-        exchange.placeOrder(true, 80 ether, 20 ether, 0);
+        exchange.placeOrder(true, 80 ether, 20 ether, 0, MarginMode.CROSS);
         
         // 4. Price Drops to 50
         exchange.updatePrices(50 ether, 50 ether);
@@ -85,13 +85,13 @@ contract Day6LiquidationTest is ExchangeFixture {
         // This prevents attackers from repeatedly liquidating tiny amounts to extract fees
         
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 10 ether, 0);
+        exchange.placeOrder(true, 100 ether, 10 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 10 ether, 0);
+        exchange.placeOrder(false, 100 ether, 10 ether, 0, MarginMode.CROSS);
         
         // Carol places Buy Order for only 5 @ 80
         vm.prank(carol);
-        exchange.placeOrder(true, 80 ether, 5 ether, 0);
+        exchange.placeOrder(true, 80 ether, 5 ether, 0, MarginMode.CROSS);
         
         exchange.updatePrices(50 ether, 50 ether);
         assertTrue(exchange.canLiquidate(alice), "Alice should be liquidatable");
@@ -104,9 +104,9 @@ contract Day6LiquidationTest is ExchangeFixture {
 
     function testCannotLiquidateHealthyPosition() public {
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 10 ether, 0);
+        exchange.placeOrder(true, 100 ether, 10 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 10 ether, 0);
+        exchange.placeOrder(false, 100 ether, 10 ether, 0, MarginMode.CROSS);
         
         exchange.updatePrices(110 ether, 110 ether); // Price up, Long is happy
         assertFalse(exchange.canLiquidate(alice), "Should be safe");
@@ -119,13 +119,13 @@ contract Day6LiquidationTest is ExchangeFixture {
     function testLiquidationClearsOrders() public {
         // Alice has open orders that lock margin. Liquidation should cancel them to free margin.
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 10 ether, 0); // Long 10
+        exchange.placeOrder(true, 100 ether, 10 ether, 0, MarginMode.CROSS); // Long 10
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 10 ether, 0); // Match
+        exchange.placeOrder(false, 100 ether, 10 ether, 0, MarginMode.CROSS); // Match
         
         // Alice places another order
         vm.prank(alice);
-        uint256 orderId = exchange.placeOrder(true, 90 ether, 5 ether, 0); // Buy 5 @ 90. Locks margin.
+        uint256 orderId = exchange.placeOrder(true, 90 ether, 5 ether, 0, MarginMode.CROSS); // Buy 5 @ 90. Locks margin.
         
         // Verify order exists
         (uint256 id, , , , , , , ) = exchange.orders(orderId);
@@ -140,7 +140,7 @@ contract Day6LiquidationTest is ExchangeFixture {
         
         // Carol provides liquidity
         vm.prank(carol);
-        exchange.placeOrder(true, 60 ether, 20 ether, 0);
+        exchange.placeOrder(true, 60 ether, 20 ether, 0, MarginMode.CROSS);
         
         vm.prank(carol);
         exchange.liquidate(alice, 10 ether);
@@ -174,13 +174,13 @@ contract Day6LiquidationTest is ExchangeFixture {
         
         // 1. Alice Longs 10 @ 100
         vm.prank(alice);
-        exchange.placeOrder(true, entryPrice, size, 0);
+        exchange.placeOrder(true, entryPrice, size, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, entryPrice, size, 0);
+        exchange.placeOrder(false, entryPrice, size, 0, MarginMode.CROSS);
         
         // 2. Carol places Buy Order at fuzzed price
         vm.prank(carol);
-        exchange.placeOrder(true, executionPrice, size, 0);
+        exchange.placeOrder(true, executionPrice, size, 0, MarginMode.CROSS);
         
         // 3. Update Oracle Price to executionPrice (or slightly below to ensure trigger)
         exchange.updatePrices(executionPrice, executionPrice);

@@ -36,11 +36,11 @@ contract Day7LiquidationTest is ExchangeFixture {
 
         // 2. Trader 做多 10 ETH @ 100
         vm.prank(trader);
-        exchange.placeOrder(true, 100 ether, 10 ether, 0);
+        exchange.placeOrder(true, 100 ether, 10 ether, 0, MarginMode.CROSS);
 
         // 3. Liquidator 提供对手方（卖出），完成撮合
         vm.prank(liquidator);
-        exchange.placeOrder(false, 100 ether, 10 ether, 0);
+        exchange.placeOrder(false, 100 ether, 10 ether, 0, MarginMode.CROSS);
 
         // 验证 Trader 持仓
         MonadPerpExchange.Position memory p = exchange.getPosition(trader);
@@ -57,7 +57,7 @@ contract Day7LiquidationTest is ExchangeFixture {
 
         // 5. Liquidator 挂买单提供流动性（让 trader 能平仓卖出）
         vm.prank(liquidator);
-        exchange.placeOrder(true, 98 ether, 10 ether, 0);
+        exchange.placeOrder(true, 98 ether, 10 ether, 0, MarginMode.CROSS);
 
         // 6. 执行清算
         uint256 liquidatorMarginBefore = exchange.margin(liquidator);
@@ -89,9 +89,9 @@ contract Day7LiquidationTest is ExchangeFixture {
 
         // 2. Trader 做多 10 ETH @ 100
         vm.prank(trader);
-        exchange.placeOrder(true, 100 ether, 10 ether, 0);
+        exchange.placeOrder(true, 100 ether, 10 ether, 0, MarginMode.CROSS);
         vm.prank(liquidator);
-        exchange.placeOrder(false, 100 ether, 10 ether, 0);
+        exchange.placeOrder(false, 100 ether, 10 ether, 0, MarginMode.CROSS);
 
         // 3. 价格跌到 98 ETH，触发清算
         exchange.updatePrices(98 ether, 98 ether);
@@ -99,7 +99,7 @@ contract Day7LiquidationTest is ExchangeFixture {
 
         // 4. 只提供 5 ETH 流动性（不足以完全清算）
         vm.prank(liquidator);
-        exchange.placeOrder(true, 98 ether, 5 ether, 0);
+        exchange.placeOrder(true, 98 ether, 5 ether, 0, MarginMode.CROSS);
 
         // 5. 尝试部分清算 - 应该 revert
         // 因为清算 5 ETH 后，剩余 5 ETH 仓位仍然不健康
@@ -119,9 +119,9 @@ contract Day7LiquidationTest is ExchangeFixture {
 
         // 2. Trader 做多 10 ETH @ 100
         vm.prank(trader);
-        exchange.placeOrder(true, 100 ether, 10 ether, 0);
+        exchange.placeOrder(true, 100 ether, 10 ether, 0, MarginMode.CROSS);
         vm.prank(liquidator);
-        exchange.placeOrder(false, 100 ether, 10 ether, 0);
+        exchange.placeOrder(false, 100 ether, 10 ether, 0, MarginMode.CROSS);
 
         // 3. 价格保持稳定
         exchange.updatePrices(100 ether, 100 ether);
@@ -149,13 +149,13 @@ contract Day7LiquidationTest is ExchangeFixture {
 
         // 2. Trader 做多 5 ETH @ 100
         vm.prank(trader);
-        exchange.placeOrder(true, 100 ether, 5 ether, 0);
+        exchange.placeOrder(true, 100 ether, 5 ether, 0, MarginMode.CROSS);
         vm.prank(liquidator);
-        exchange.placeOrder(false, 100 ether, 5 ether, 0);
+        exchange.placeOrder(false, 100 ether, 5 ether, 0, MarginMode.CROSS);
 
         // 3. Trader 再挂一个额外的限价买单
         vm.prank(trader);
-        uint256 extraOrderId = exchange.placeOrder(true, 90 ether, 2 ether, 0);
+        uint256 extraOrderId = exchange.placeOrder(true, 90 ether, 2 ether, 0, MarginMode.CROSS);
 
         // 验证挂单存在
         (uint256 orderId,,,,,,,) = exchange.orders(extraOrderId);
@@ -178,7 +178,7 @@ contract Day7LiquidationTest is ExchangeFixture {
 
         // 5. 提供流动性并清算
         vm.prank(liquidator);
-        exchange.placeOrder(true, 40 ether, 5 ether, 0);
+        exchange.placeOrder(true, 40 ether, 5 ether, 0, MarginMode.CROSS);
 
         vm.prank(liquidator);
         exchange.liquidate(trader, 0);
@@ -214,9 +214,9 @@ contract Day7LiquidationTest is ExchangeFixture {
         exchange.deposit{value: 10000 ether}();
 
         vm.prank(fuzzTrader);
-        exchange.placeOrder(true, entryPrice, posSize, 0);
+        exchange.placeOrder(true, entryPrice, posSize, 0, MarginMode.CROSS);
         vm.prank(fuzzLiquidator);
-        exchange.placeOrder(false, entryPrice, posSize, 0);
+        exchange.placeOrder(false, entryPrice, posSize, 0, MarginMode.CROSS);
 
         // 2. 计算新价格
         uint256 newPrice = entryPrice * (10000 - priceDropBps) / 10000;
@@ -245,7 +245,7 @@ contract Day7LiquidationTest is ExchangeFixture {
         if (shouldBeLiquidatable) {
             // 提供流动性
             vm.prank(fuzzLiquidator);
-            exchange.placeOrder(true, newPrice, posSize, 0);
+            exchange.placeOrder(true, newPrice, posSize, 0, MarginMode.CROSS);
 
             // 执行清算
             vm.prank(fuzzLiquidator);

@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
 import "../src/Exchange.sol";
+import "../src/core/ExchangeStorage.sol";
 
 contract SeedDataScript is Script {
     // Anvil Account #0 (Deployer / Alice)
@@ -65,14 +66,14 @@ contract SeedDataScript is Script {
 
         // 3. Place Open Orders (Orderbook)
         vm.startBroadcast(ALICE_PK);
-        exchange.placeOrder(true, 1400 ether, 10 ether, 0); // Buy @ 1400
-        exchange.placeOrder(true, 1450 ether, 20 ether, 0); // Buy @ 1450
+        exchange.placeOrder(true, 1400 ether, 10 ether, 0, MarginMode.CROSS); // Buy @ 1400
+        exchange.placeOrder(true, 1450 ether, 20 ether, 0, MarginMode.CROSS); // Buy @ 1450
         console.log("Alice placed buy orders");
         vm.stopBroadcast();
 
         vm.startBroadcast(BOB_PK);
-        exchange.placeOrder(false, 1600 ether, 15 ether, 0); // Sell @ 1600
-        exchange.placeOrder(false, 1650 ether, 25 ether, 0); // Sell @ 1650
+        exchange.placeOrder(false, 1600 ether, 15 ether, 0, MarginMode.CROSS); // Sell @ 1600
+        exchange.placeOrder(false, 1650 ether, 25 ether, 0, MarginMode.CROSS); // Sell @ 1650
         console.log("Bob placed sell orders");
         vm.stopBroadcast();
     }
@@ -80,12 +81,12 @@ contract SeedDataScript is Script {
     function _trade(MonadPerpExchange exchange, uint256 price, uint256 amount) internal {
         // Bob places a sell order
         vm.startBroadcast(BOB_PK);
-        exchange.placeOrder(false, price, amount, 0);
+        exchange.placeOrder(false, price, amount, 0, MarginMode.CROSS);
         vm.stopBroadcast();
 
         // Alice buys it
         vm.startBroadcast(ALICE_PK);
-        exchange.placeOrder(true, price, amount, 0);
+        exchange.placeOrder(true, price, amount, 0, MarginMode.CROSS);
         vm.stopBroadcast();
         
         console.log("Executed trade at", price / 1e18);

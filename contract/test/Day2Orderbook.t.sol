@@ -14,11 +14,11 @@ contract Day2OrderbookTest is ExchangeFixture {
     function testOrderInsertionMaintainsPriority() public {
         // 用例：买单价格高者优先，链表顺序保持 120 > 110 > 100
         vm.prank(alice);
-        uint256 low = exchange.placeOrder(true, 100, 2, 0);
+        uint256 low = exchange.placeOrder(true, 100, 2, 0, MarginMode.CROSS);
         vm.prank(bob);
-        uint256 high = exchange.placeOrder(true, 120, 1, 0);
+        uint256 high = exchange.placeOrder(true, 120, 1, 0, MarginMode.CROSS);
         vm.prank(alice);
-        uint256 mid = exchange.placeOrder(true, 110, 1, 0);
+        uint256 mid = exchange.placeOrder(true, 110, 1, 0, MarginMode.CROSS);
 
         assertEq(exchange.bestBuyId(), high, "highest price should be head");
         MonadPerpExchange.Order memory best = exchange.getOrder(high);
@@ -38,20 +38,20 @@ contract Day2OrderbookTest is ExchangeFixture {
         vm.assume(uint256(lowPrice) * amountA <= 50 ether);
 
         vm.prank(alice);
-        exchange.placeOrder(true, lowPrice, amountA, 0);
+        exchange.placeOrder(true, lowPrice, amountA, 0, MarginMode.CROSS);
         vm.prank(bob);
-        uint256 hid = exchange.placeOrder(true, highPrice, amountB, 0);
+        uint256 hid = exchange.placeOrder(true, highPrice, amountB, 0, MarginMode.CROSS);
 
         assertEq(exchange.bestBuyId(), hid, "higher price wins head");
     }
 
     function testSellInsertionMaintainsPriority() public {
         vm.prank(alice);
-        uint256 high = exchange.placeOrder(false, 150, 1, 0);
+        uint256 high = exchange.placeOrder(false, 150, 1, 0, MarginMode.CROSS);
         vm.prank(bob);
-        uint256 low = exchange.placeOrder(false, 120, 2, 0);
+        uint256 low = exchange.placeOrder(false, 120, 2, 0, MarginMode.CROSS);
         vm.prank(alice);
-        uint256 mid = exchange.placeOrder(false, 140, 1, 0);
+        uint256 mid = exchange.placeOrder(false, 140, 1, 0, MarginMode.CROSS);
 
         assertEq(exchange.bestSellId(), low, "lowest ask should be head");
         MonadPerpExchange.Order memory head = exchange.getOrder(low);
@@ -70,9 +70,9 @@ contract Day2OrderbookTest is ExchangeFixture {
         vm.assume(uint256(lowPrice) * amountB <= 50 ether);
 
         vm.prank(alice);
-        exchange.placeOrder(false, highPrice, amountA, 0);
+        exchange.placeOrder(false, highPrice, amountA, 0, MarginMode.CROSS);
         vm.prank(bob);
-        uint256 lid = exchange.placeOrder(false, lowPrice, amountB, 0);
+        uint256 lid = exchange.placeOrder(false, lowPrice, amountB, 0, MarginMode.CROSS);
 
         assertEq(exchange.bestSellId(), lid, "lower ask becomes head");
     }
@@ -80,9 +80,9 @@ contract Day2OrderbookTest is ExchangeFixture {
     function testInsertWithValidHintAppendsSamePriceTail() public {
         // 用例：同价位使用 hint 插到尾部
         vm.prank(alice);
-        uint256 first = exchange.placeOrder(true, 100, 1, 0);
+        uint256 first = exchange.placeOrder(true, 100, 1, 0, MarginMode.CROSS);
         vm.prank(bob);
-        uint256 second = exchange.placeOrder(true, 100, 1, first);
+        uint256 second = exchange.placeOrder(true, 100, 1, first, MarginMode.CROSS);
 
         MonadPerpExchange.Order memory head = exchange.getOrder(first);
         assertEq(head.next, second, "second should follow first at same price");
@@ -91,32 +91,32 @@ contract Day2OrderbookTest is ExchangeFixture {
     function testInsertWithSamePriceNonTailReverts() public {
         // 用例：hint 不是同价尾部时应 revert，防止恶意插队
         vm.prank(alice);
-        uint256 first = exchange.placeOrder(false, 120, 1, 0);
+        uint256 first = exchange.placeOrder(false, 120, 1, 0, MarginMode.CROSS);
         vm.prank(bob);
-        uint256 second = exchange.placeOrder(false, 120, 1, 0);
+        uint256 second = exchange.placeOrder(false, 120, 1, 0, MarginMode.CROSS);
 
         vm.prank(alice);
         vm.expectRevert(bytes("hint not last"));
-        exchange.placeOrder(false, 120, 1, first);
+        exchange.placeOrder(false, 120, 1, first, MarginMode.CROSS);
 
         vm.prank(alice);
-        exchange.placeOrder(false, 120, 1, second);
+        exchange.placeOrder(false, 120, 1, second, MarginMode.CROSS);
     }
 
     function testInsertPriceBetterThanHintReverts() public {
         // 用例：价格优于 hint 但仍试图从 hint 之后插入，应 revert
         vm.prank(alice);
-        uint256 low = exchange.placeOrder(true, 100, 1, 0);
+        uint256 low = exchange.placeOrder(true, 100, 1, 0, MarginMode.CROSS);
 
         vm.prank(bob);
         vm.expectRevert(bytes("hint too deep"));
-        exchange.placeOrder(true, 150, 1, low);
+        exchange.placeOrder(true, 150, 1, low, MarginMode.CROSS);
     }
 
     function testNonexistentHintReverts() public {
         // 用例：不存在的 hint 直接 revert
         vm.prank(alice);
         vm.expectRevert(bytes("invalid hint"));
-        exchange.placeOrder(true, 100, 1, 123456); // hint 未存在
+        exchange.placeOrder(true, 100, 1, 123456, MarginMode.CROSS); // hint 未存在
     }
 }

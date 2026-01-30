@@ -71,6 +71,19 @@
   },
   {
     "type": "function",
+    "name": "allocateToIsolated",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "bestBuyId",
     "inputs": [],
     "outputs": [
@@ -156,6 +169,102 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAccountDetails",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "crossMargin",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "mode",
+        "type": "uint8",
+        "internalType": "enum MarginMode"
+      },
+      {
+        "name": "isolatedMargin",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "size",
+        "type": "int256",
+        "internalType": "int256"
+      },
+      {
+        "name": "entryPrice",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCrossMargin",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getIsolatedMargin",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getMarginMode",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "enum MarginMode"
       }
     ],
     "stateMutability": "view"
@@ -248,9 +357,14 @@
             "internalType": "uint256"
           },
           {
-            "name": "realizedPnl",
-            "type": "int256",
-            "internalType": "int256"
+            "name": "mode",
+            "type": "uint8",
+            "internalType": "enum MarginMode"
+          },
+          {
+            "name": "isolatedMargin",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       }
@@ -375,19 +489,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "liquidate",
-    "inputs": [
-      {
-        "name": "trader",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -587,6 +688,11 @@
         "name": "hintId",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "marginMode",
+        "type": "uint8",
+        "internalType": "enum MarginMode"
       }
     ],
     "outputs": [
@@ -600,39 +706,16 @@
   },
   {
     "type": "function",
-    "name": "positions",
+    "name": "removeFromIsolated",
     "inputs": [
       {
-        "name": "trader",
-        "type": "address",
-        "internalType": "address"
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct ExchangeStorage.Position",
-        "components": [
-          {
-            "name": "size",
-            "type": "int256",
-            "internalType": "int256"
-          },
-          {
-            "name": "entryPrice",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "realizedPnl",
-            "type": "int256",
-            "internalType": "int256"
-          }
-        ]
-      }
-    ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -825,6 +908,44 @@
   },
   {
     "type": "event",
+    "name": "IsolatedMarginAllocated",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "IsolatedMarginRemoved",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Liquidated",
     "inputs": [
       {
@@ -840,13 +961,13 @@
         "internalType": "address"
       },
       {
-        "name": "reward",
+        "name": "amount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "sentToFund",
+        "name": "reward",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -869,6 +990,25 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MarginModeChanged",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "mode",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum MarginMode"
       }
     ],
     "anonymous": false
@@ -969,6 +1109,31 @@
         "name": "id",
         "type": "uint256",
         "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PositionUpdated",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "size",
+        "type": "int256",
+        "indexed": false,
+        "internalType": "int256"
+      },
+      {
+        "name": "entryPrice",
+        "type": "uint256",
+        "indexed": false,
         "internalType": "uint256"
       }
     ],

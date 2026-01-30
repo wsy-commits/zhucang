@@ -44,9 +44,9 @@ contract Day4PriceUpdateTest is ExchangeFixture {
         _deposit(bob, 1 ether);
 
         vm.prank(alice);
-        exchange.placeOrder(true, 1 ether, 1 ether, 0); // Alice 多头
+        exchange.placeOrder(true, 1 ether, 1 ether, 0, MarginMode.CROSS); // Alice 多头
         vm.prank(bob);
-        exchange.placeOrder(false, 1 ether, 1 ether, 0); // Bob 做空，成交
+        exchange.placeOrder(false, 1 ether, 1 ether, 0, MarginMode.CROSS); // Bob 做空，成交
 
         // 价格不变，无盈亏，保证金充足
         exchange.updateIndexPrice(1 ether);
@@ -63,9 +63,9 @@ contract Day4PriceUpdateTest is ExchangeFixture {
         _deposit(bob, 10 ether);
 
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 1 ether, 0); // notional 100
+        exchange.placeOrder(true, 100 ether, 1 ether, 0, MarginMode.CROSS); // notional 100
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 1 ether, 0);
+        exchange.placeOrder(false, 100 ether, 1 ether, 0, MarginMode.CROSS);
 
         // 标记价有利于多头，未实现收益增加可提现空间
         exchange.updateIndexPrice(150 ether);

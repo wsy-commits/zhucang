@@ -35,9 +35,17 @@ export enum OrderType {
   LIMIT = 'Limit'
 }
 
+// ✅ 新增：保证金模式枚举
+export enum MarginMode {
+  CROSS = 0,      // 全仓模式
+  ISOLATED = 1    // 逐仓模式
+}
+
 export interface PositionSnapshot {
   size: bigint;
   entryPrice: bigint;
+  mode?: MarginMode;           // ✅ 新增：保证金模式
+  isolatedMargin?: bigint;     // ✅ 新增：逐仓保证金
 }
 
 export interface DisplayPosition {
@@ -50,4 +58,7 @@ export interface DisplayPosition {
   pnl: number;
   pnlPercent: number;
   side: 'long' | 'short';
+  mode?: MarginMode;           // ✅ 新增：保证金模式
+  isolatedMargin?: number;     // ✅ 新增：逐仓保证金显示
+  marginRatio?: number;        // 保证金率（健康度）
 }

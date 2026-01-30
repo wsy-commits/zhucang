@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { formatEther } from 'viem';
-import { OrderSide, OrderType } from '../types';
+import { OrderSide, OrderType, MarginMode } from '../types';
 import { observer } from 'mobx-react-lite';
 import { useExchangeStore } from '../store/exchangeStore';
 
@@ -9,17 +9,22 @@ import { MarketStats } from './MarketStats';
 export const OrderForm: React.FC = observer(() => {
   const [orderType, setOrderType] = useState<OrderType>(OrderType.MARKET);
   const [leverage, setLeverage] = useState(20);
+  const [marginMode, setMarginMode] = useState<MarginMode>(MarginMode.CROSS);  // ✅ 新增：保证金模式状态
   const [amount, setAmount] = useState('');
   const [price, setPrice] = useState('');
   const [hintId, setHintId] = useState('');
   const [depositAmount, setDepositAmount] = useState('0.1');
   const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [allocateAmount, setAllocateAmount] = useState('');
+  const [removeAmount, setRemoveAmount] = useState('');
   const [status, setStatus] = useState<string | undefined>();
   const [isDepositing, setIsDepositing] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [isAllocating, setIsAllocating] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
   const store = useExchangeStore();
-  const { account, margin, markPrice, placeOrder, deposit, withdraw, connectWallet, syncing, error } =
+  const { account, margin, crossMargin, isolatedMargin, markPrice, placeOrder, deposit, withdraw, allocateToIsolated, removeFromIsolated, connectWallet, syncing, error, marginMode: currentMode } =
     store;
 
   const availableMargin = Number(formatEther(margin));
@@ -46,6 +51,7 @@ export const OrderForm: React.FC = observer(() => {
         price: orderType === OrderType.MARKET ? undefined : price,
         amount: parsedAmount.toString(),
         hintId,
+        marginMode,  // ✅ 新增：传递保证金模式
       });
       setAmount('');
       setPrice('');
@@ -81,6 +87,34 @@ export const OrderForm: React.FC = observer(() => {
       setStatus((e as Error)?.message || 'Withdraw failed');
     } finally {
       setIsWithdrawing(false);
+    }
+  };
+
+  const handleAllocateToIsolated = async () => {
+    try {
+      setStatus(undefined);
+      setIsAllocating(true);
+      await allocateToIsolated(allocateAmount);
+      setStatus('Margin allocated to isolated');
+      setAllocateAmount('');
+    } catch (e) {
+      setStatus((e as Error)?.message || 'Allocation failed');
+    } finally {
+      setIsAllocating(false);
+    }
+  };
+
+  const handleRemoveFromIsolated = async () => {
+    try {
+      setStatus(undefined);
+      setIsRemoving(true);
+      await removeFromIsolated(removeAmount);
+      setStatus('Margin removed from isolated');
+      setRemoveAmount('');
+    } catch (e) {
+      setStatus((e as Error)?.message || 'Removal failed');
+    } finally {
+      setIsRemoving(false);
     }
   };
 
@@ -188,6 +222,96 @@ export const OrderForm: React.FC = observer(() => {
         </div>
       </div>
 
+      {/* ✅ 新增：保证金模式选择器 */}
+      <div className="shrink-0">
+        <div className="flex justify-between text-xs mb-2">
+          <span className="text-gray-400">Margin Mode</span>
+          <span className="text-white font-mono text-xs">
+            {currentMode === MarginMode.ISOLATED ? 'ISOLATED' : 'CROSS'}
+          </span>
+        </div>
+        <div className="flex bg-[#0B0E14] p-1 rounded-lg shrink-0">
+          <button
+            onClick={() => setMarginMode(MarginMode.CROSS)}
+            className={`flex-1 py-2 text-xs font-medium rounded-md transition-all ${
+              marginMode === MarginMode.CROSS
+                ? 'bg-[#1E2330] text-white shadow-sm'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            Cross
+          </button>
+          <button
+            onClick={() => setMarginMode(MarginMode.ISOLATED)}
+            className={`flex-1 py-2 text-xs font-medium rounded-md transition-all ${
+              marginMode === MarginMode.ISOLATED
+                ? 'bg-[#1E2330] text-white shadow-sm'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            Isolated
+          </button>
+        </div>
+        {marginMode === MarginMode.ISOLATED && (
+          <div className="mt-2 text-[10px] text-gray-500">
+            Each position has independent margin
+          </div>
+        )}
+      </div>
+
+      {/* ✅ 新增：逐仓保证金管理（仅在逐仓模式下显示） */}
+      {marginMode === MarginMode.ISOLATED && (
+        <div className="shrink-0 bg-[#0B0E14] border border-white/10 rounded-lg p-3 space-y-3">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-gray-400">Isolated Margin Management</span>
+            <div className="flex gap-3 text-[10px]">
+              <span className="text-gray-500">Cross: <span className="text-blue-400 font-mono">{Number(formatEther(crossMargin || 0n)).toFixed(4)}</span></span>
+              <span className="text-gray-500">Isolated: <span className="text-purple-400 font-mono">{Number(formatEther(isolatedMargin || 0n)).toFixed(4)}</span></span>
+            </div>
+          </div>
+
+          {/* Allocate to Isolated */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={allocateAmount}
+              onChange={(e) => setAllocateAmount(e.target.value)}
+              className="flex-1 bg-transparent border border-white/10 rounded px-2 py-1.5 text-white text-xs outline-none focus:border-purple-500/50"
+              placeholder="Amount to allocate"
+            />
+            <button
+              onClick={account ? handleAllocateToIsolated : connectWallet}
+              disabled={isAllocating || !allocateAmount}
+              className="px-3 py-1.5 rounded bg-purple-500/20 text-purple-400 font-semibold text-xs hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {isAllocating ? 'Pending...' : 'Allocate →'}
+            </button>
+          </div>
+
+          {/* Remove from Isolated */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={removeAmount}
+              onChange={(e) => setRemoveAmount(e.target.value)}
+              className="flex-1 bg-transparent border border-white/10 rounded px-2 py-1.5 text-white text-xs outline-none focus:border-purple-500/50"
+              placeholder="Amount to remove"
+            />
+            <button
+              onClick={account ? handleRemoveFromIsolated : connectWallet}
+              disabled={isRemoving || !removeAmount}
+              className="px-3 py-1.5 rounded bg-gray-500/20 text-gray-400 font-semibold text-xs hover:bg-gray-500/30 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              {isRemoving ? 'Pending...' : '← Remove'}
+            </button>
+          </div>
+
+          <div className="text-[9px] text-gray-600 text-center">
+            Transfer margin between Cross and Isolated
+          </div>
+        </div>
+      )}
+
       {/* Inputs */}
       <div className="space-y-3 shrink-0">
         <div className="bg-[#0B0E14] border border-white/10 rounded-lg px-3 py-2 flex items-center justify-between group focus-within:border-nebula-violet/50 transition-colors">
@@ -274,10 +398,12 @@ export const OrderForm: React.FC = observer(() => {
       {/* Account Info */}
       <div className="mt-auto pt-4">
         <div className="grid grid-cols-2 gap-y-2 text-xs border-t border-white/5 pt-4">
-          <div className="text-gray-500">Available</div>
-          <div className="text-white text-right font-mono">{availableMargin.toFixed(4)} USD</div>
-          <div className="text-gray-500">Locked</div>
-          <div className="text-white text-right font-mono">{locked.toFixed(4)} USD</div>
+          <div className="text-gray-500">Cross Margin</div>
+          <div className="text-white text-right font-mono">{Number(formatEther(crossMargin || margin)).toFixed(4)} USD</div>
+          <div className="text-gray-500">Isolated Margin</div>
+          <div className="text-white text-right font-mono">{Number(formatEther(isolatedMargin || 0n)).toFixed(4)} USD</div>
+          <div className="text-gray-500">Margin Mode</div>
+          <div className="text-right font-mono text-gray-300">{currentMode === MarginMode.ISOLATED ? 'ISOLATED' : 'CROSS'}</div>
           <div className="text-gray-500">Order Type</div>
           <div className="text-right font-mono text-gray-300">{orderType}</div>
         </div>

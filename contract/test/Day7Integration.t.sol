@@ -16,9 +16,9 @@ contract Day7IntegrationTest is ExchangeFixture {
         // 用例：完整链路演练，验证撮合、资金费率结算、清算及奖励分配
         // 1) Alice 挂买单，Bob 卖出吃单（完全成交）
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 2 ether, 0);
+        exchange.placeOrder(true, 100 ether, 2 ether, 0, MarginMode.CROSS);
         vm.prank(bob);
-        exchange.placeOrder(false, 90 ether, 2 ether, 0);
+        exchange.placeOrder(false, 90 ether, 2 ether, 0, MarginMode.CROSS);
 
         assertEq(exchange.bestBuyId(), 0, "orderbook cleared for bids");
         assertEq(exchange.bestSellId(), 0, "orderbook cleared for asks");
@@ -61,7 +61,7 @@ contract Day7IntegrationTest is ExchangeFixture {
         exchange.deposit{value: 2000 ether}();
         
         // Carol places Sell Order @ 1095 to allow Bob to close
-        exchange.placeOrder(false, 1095 ether, 2 ether, 0);
+        exchange.placeOrder(false, 1095 ether, 2 ether, 0, MarginMode.CROSS);
         
         // Trigger Liquidation
         exchange.liquidate(bob, 2 ether);
@@ -103,11 +103,11 @@ contract Day7IntegrationTest is ExchangeFixture {
     function testBadDebtLiquidation() public {
         // 1. Bob Shorts 10 ETH @ 100
         vm.prank(bob);
-        exchange.placeOrder(false, 100 ether, 10 ether, 0);
+        exchange.placeOrder(false, 100 ether, 10 ether, 0, MarginMode.CROSS);
         
         // 2. Alice Longs 10 ETH @ 100 (Match)
         vm.prank(alice);
-        exchange.placeOrder(true, 100 ether, 10 ether, 0);
+        exchange.placeOrder(true, 100 ether, 10 ether, 0, MarginMode.CROSS);
         
         // 3. Price spikes to 5000 (Bob is REKT)
         exchange.updatePrices(5000 ether, 5000 ether);
@@ -118,7 +118,7 @@ contract Day7IntegrationTest is ExchangeFixture {
         vm.deal(carol, 1000 ether);
         vm.startPrank(carol);
         exchange.deposit{value: 1000 ether}();
-        exchange.placeOrder(false, 5000 ether, 10 ether, 0);
+        exchange.placeOrder(false, 5000 ether, 10 ether, 0, MarginMode.CROSS);
         
         // 5. Liquidate Bob
         exchange.liquidate(bob, 10 ether);

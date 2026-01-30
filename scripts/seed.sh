@@ -26,14 +26,14 @@ check_tx() {
 }
 
 # Helper to place order
-# placeOrder(bool isBuy, uint256 price, uint256 amount, uint256 hintId)
+# placeOrder(bool isBuy, uint256 price, uint256 amount, uint256 hintId, MarginMode marginMode)
 place_order() {
     local pk=$1
     local is_buy=$2
     local price=$3
     local amount=$4
     echo "  -> Placing Order: Buy=$is_buy Price=$price Amount=$amount"
-    cast send --rpc-url $RPC_URL --private-key $pk $EXCHANGE "placeOrder(bool,uint256,uint256,uint256)" $is_buy $price $amount 0
+    cast send --rpc-url $RPC_URL --private-key $pk $EXCHANGE "placeOrder(bool,uint256,uint256,uint256,uint8)" $is_buy $price $amount 0 0
     sleep 1
     check_tx
 }
